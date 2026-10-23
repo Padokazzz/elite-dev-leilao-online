@@ -1,9 +1,14 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.db import IntegrityError, transaction
 from django.test import TestCase
+from django.db import IntegrityError, transaction
+
 from rest_framework import status
+from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
+
 from .serializers import RegisterSerializer
 
 
@@ -170,3 +175,243 @@ class RegisterEndpointTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         user = User.objects.get(email="new_bidder@example.com")
         self.assertEqual(user.role, User.Role.BIDDER)
+
+
+class LoginEndpointTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.user = get_user_model().objects.create_user(
+            username="leonardo",
+            email="leonardo@example.com",
+            password="SenhaForte!2026",
+        )
+        self.url = "/api/auth/login/"
+
+    def test_login_with_valid_credentials_returns_token_and_user(self):
+        response = self.client.post(
+            self.url,
+            {
+                "email": "LEONARDO@example.com",
+                "password": "SenhaForte!2026",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("token", response.data)
+        self.assertEqual(response.data["user"]["email"], self.user.email)
+        self.assertNotIn("password", response.data["user"])
+
+    def test_login_with_wrong_password_is_rejected(self):
+        response = self.client.post(
+            self.url,
+            {
+                "email": self.user.email,
+                "password": "SenhaErrada!2026",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertNotIn("token", response.data)
+
+    def test_login_with_unknown_email_is_rejected(self):
+        response = self.client.post(
+            self.url,
+            {
+                "email": "inexistente@example.com",
+                "password": "SenhaForte!2026",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertNotIn("token", response.data)
+
+    def test_login_requires_email_and_password(self):
+        response = self.client.post(
+            self.url,
+            {},
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_inactive_user_cannot_login(self):
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
+
+        response = self.client.post(
+            self.url,
+            {
+                "email": self.user.email,
+                "password": "SenhaForte!2026",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertFalse(Token.objects.filter(user=self.user).exists())
+
+
+class LoginThrottleTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.url = "/api/auth/login/"
+
+    @patch(
+        "accounts.views.LoginThrottle.get_rate",
+        return_value="2/min",
+    )
+    def test_login_is_throttled_after_limit(self, mock_get_rate):
+        cache.clear()
+
+        for _ in range(2):
+            response = self.client.post(
+                self.url,
+                {
+                    "email": "naoexiste@example.com",
+                    "password": "senha-incorreta",
+                },
+                format="json",
+            )
+
+            self.assertEqual(
+                response.status_code,
+                status.HTTP_400_BAD_REQUEST,
+            )
+
+        response = self.client.post(
+            self.url,
+            {
+                "email": "naoexiste@example.com",
+                "password": "senha-incorreta",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+
+class MeEndpointTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.user = get_user_model().objects.create_user(
+            username="leonardo",
+            email="leonardo@example.com",
+            password="SenhaForte!2026",
+        )
+        self.url = "/api/auth/me/"
+
+    def test_me_without_token_returns_401(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_me_with_valid_token_returns_user_data(self):
+        token = Token.objects.create(user=self.user)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {token.key}"
+        )
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+        self.assertEqual(response.data["id"], self.user.id)
+        self.assertEqual(
+            response.data["username"],
+            self.user.username,
+        )
+        self.assertEqual(
+            response.data["email"],
+            self.user.email,
+        )
+        self.assertEqual(response.data["role"], self.user.role)
+        self.assertNotIn("password", response.data)
+
+    def test_me_with_invalid_token_returns_401(self):
+        self.client.credentials(
+            HTTP_AUTHORIZATION="Token token-invalido"
+        )
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+class LogoutEndpointTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.user = get_user_model().objects.create_user(
+            username="leonardo",
+            email="leonardo@example.com",
+            password="SenhaForte!2026",
+        )
+        self.token = Token.objects.create(user=self.user)
+        self.url = "/api/auth/logout/"
+
+    def test_logout_without_token_returns_401(self):
+        response = self.client.post(self.url)
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_logout_deletes_token(self):
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {self.token.key}"
+        )
+
+        response = self.client.post(self.url)
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+        self.assertFalse(
+            Token.objects.filter(user=self.user).exists()
+        )
+
+    def test_deleted_token_cannot_access_me_endpoint(self):
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {self.token.key}"
+        )
+
+        logout_response = self.client.post(self.url)
+
+        self.assertEqual(
+            logout_response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        me_response = self.client.get("/api/auth/me/")
+
+        self.assertEqual(
+            me_response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
