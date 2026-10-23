@@ -24,8 +24,10 @@ load_dotenv(BASE_DIR / ".env")
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-v7!gxaxl9+0wtjvh&5@6-=xv_0h+s_!n919!*myl1zm+gg)4bz"
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
 
+if not SECRET_KEY:
+    raise RuntimeError("DJANGO_SECRET_KEY não configurada.")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
@@ -46,6 +48,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "channels",
+    "rest_framework.authtoken",
 
     # Aplicações do projeto
     "accounts",
@@ -143,3 +146,16 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "accounts.User"
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.TokenAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "auth_login": "5/min",
+        "auth_register": "5/min",
+    },
+}
