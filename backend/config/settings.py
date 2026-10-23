@@ -157,5 +157,6 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "auth_login": "5/min",
         "auth_register": "5/min",
+        "catalog_search": "30/min",
     },
 }
