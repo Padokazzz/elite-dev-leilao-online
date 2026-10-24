@@ -19,14 +19,30 @@ Em desenvolvimento.
 
 - [x] Estrutura inicial do backend Django
 - [x] Endpoint de verificação de saúde da API
-- [ ] Autenticação e papéis de usuário
-- [ ] Catálogo de itens
+- [x] Autenticação e papéis de usuário
+- [x] Catálogo de itens (busca e importação da API externa, com cache local)
+- [x] Carteiras: saldo total, comprometido e disponível, depósito simulado e ledger de movimentações
+- [ ] Validação de lances
 - [ ] Gerenciamento de leilões
-- [ ] Carteiras e validação de lances
 - [ ] Atualizações em tempo real
 - [ ] Auditoria e comprovantes
 - [ ] Testes automatizados
 - [ ] Deploy público
+
+### Endpoints disponíveis
+
+| Método | Rota | Descrição |
+| :--- | :--- | :--- |
+| GET | `/api/health` | Verificação de saúde da API |
+| POST | `/api/auth/register/` | Registro (papel sempre definido como licitante) |
+| POST | `/api/auth/login/` | Login por e-mail, devolve token |
+| GET | `/api/auth/me/` | Usuário autenticado |
+| POST | `/api/auth/logout/` | Revoga o token |
+| GET | `/api/catalog/search/` | Busca obras na API externa |
+| POST | `/api/catalog/import/` | Importa uma obra para o catálogo local |
+| GET | `/api/wallets/` | Saldo total, comprometido e disponível |
+| POST | `/api/wallets/deposit/` | Depósito simulado (aceita `"amount": "50.00"`) |
+| GET | `/api/wallets/transactions/` | Extrato (ledger, mais recentes primeiro) |
 
 ## Execução local
 
