@@ -27,3 +27,6 @@ dist/
 .coverage
 htmlcov/
 .pytest_cache/
+
+escopo.md
+PLANO.md
