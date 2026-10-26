@@ -6,12 +6,10 @@ from rest_framework.authtoken.models import Token
 
 from auctions.models import Auction
 
+from .groups import auction_group
+
 CLOSE_UNAUTHENTICATED = 4401   
 CLOSE_UNKNOWN_AUCTION = 4404
-
-
-def auction_group(auction_id: int) -> str:
-    return f"auction.{auction_id}"
 
 
 class AuctionConsumer(AsyncJsonWebsocketConsumer):

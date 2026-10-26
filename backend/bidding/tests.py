@@ -24,8 +24,9 @@ from unittest.mock import patch
 
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APITransactionTestCase
 
+from asgiref.sync import sync_to_async
 from channels.testing import WebsocketCommunicator
 
 from config.asgi import application
@@ -591,7 +592,7 @@ class BidEndpointTests(APITestCase):
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-class AuctionRoomTests(TransactionTestCase):
+class AuctionRoomTests(APITransactionTestCase):
     def setUp(self):
         self.seller = make_user(
             username="room_seller",
@@ -604,6 +605,16 @@ class AuctionRoomTests(TransactionTestCase):
         self.auction = make_auction(self.seller)
         self.token = Token.objects.create(user=self.alice)
         self.origin = [(b"origin", b"http://testserver")]
+
+        # A segunda aba do teste de integração, e saldo para dar lance:
+        # sem fund() o POST volta 400 (insufficient_balance).
+        self.bob = make_user(
+            username="room_bob", email="room_bob@example.com"
+        )
+        self.bob_token = Token.objects.create(user=self.bob)
+
+        fund(self.alice, 100_000)
+        fund(self.bob, 100_000)
 
     def _room(self, token=None):
         path = f"/ws/auctions/{self.auction.pk}/"
@@ -659,7 +670,7 @@ class AuctionRoomTests(TransactionTestCase):
         communicator = self._room(self.token.key)
         connected, _ = await communicator.connect()
         self.assertTrue(connected)
-        await communicator.receive_json_from(timeout=2)  # descarta o snapshot
+        await communicator.receive_json_from(timeout=2)  
 
         await communicator.send_json_to(
             {"type": "bid", "amount_cents": 10_000}
@@ -669,3 +680,35 @@ class AuctionRoomTests(TransactionTestCase):
         self.assertEqual(reply["type"], "room.error")
 
         await communicator.disconnect()
+
+    async def test_bid_posted_over_http_reaches_everyone_in_the_room(self):
+        alice_room = self._room(self.token.key)
+        connected, _ = await alice_room.connect()
+        self.assertTrue(connected)
+        await alice_room.receive_json_from(timeout=2)  
+
+        bob_room = self._room(self.bob_token.key)
+        connected, _ = await bob_room.connect()
+        self.assertTrue(connected)
+        await bob_room.receive_json_from(timeout=2)  
+
+        response = await sync_to_async(self.client.post)(
+            f"/api/auctions/{self.auction.pk}/bids/",
+            {"amount_cents": 10_000},
+            format="json",
+            HTTP_AUTHORIZATION=f"Token {self.token.key}",
+        )
+        self.assertEqual(response.status_code, 201)
+
+        first = await alice_room.receive_json_from(timeout=2)
+        second = await bob_room.receive_json_from(timeout=2)
+
+        for message in (first, second):
+            self.assertEqual(message["type"], "bid.placed")
+            self.assertEqual(message["bid"]["seq"], 1)
+            self.assertEqual(message["bid"]["amount_cents"], 10_000)
+            self.assertFalse(message["extended"])
+            self.assertEqual(message["next_minimum_cents"], 11_000)
+
+        await alice_room.disconnect()
+        await bob_room.disconnect()
