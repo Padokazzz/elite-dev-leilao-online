@@ -88,15 +88,17 @@ def place_bid(*, auction_id: int, bidder: User, amount_cents: int) -> BidOutcome
                 "auction_not_started", "Este lote ainda não começou."
             )
 
-        if bidder.role == User.Role.AUCTIONEER:
-            raise BidRejected(
-                "auctioneer_cannot_bid",
-                "Leiloeiros não podem dar lances.",
-            )
+        # Dono do lote antes do papel: é a regra mais específica e gera a
+        # mensagem mais útil. Mesmo princípio de already_leader < minimum.
         if auction.seller_id == bidder.id:
             raise BidRejected(
                 "seller_cannot_bid",
                 "Você não pode dar lance no seu próprio lote.",
+            )
+        if bidder.role == User.Role.AUCTIONEER:
+            raise BidRejected(
+                "auctioneer_cannot_bid",
+                "Leiloeiros não podem dar lances.",
             )
 
         previous = auction.bids.order_by("-seq").first()
