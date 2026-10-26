@@ -6,8 +6,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from auctions.models import Auction
-from wallets.models import Wallet, WalletTransaction
-from wallets.services import get_or_create_wallet
+from wallets.models import WalletTransaction
+from wallets.services import get_or_create_wallet, lock_wallets
 
 from .exceptions import BidRejected
 from .models import Bid
@@ -31,20 +31,6 @@ class BidOutcome:
 def _brl(cents: int) -> str:
     """Formata centavos em BRL sem passar por float."""
     return f"R$ {cents // 100},{cents % 100:02d}"
-
-
-def _lock_wallets(user_ids) -> dict:
-    """Trava carteiras em ordem determinística de user_id.
-
-    Ordem fixa = sem ciclo possível entre transações concorrentes.
-    """
-    locked = {}
-    for user_id in sorted(set(user_ids)):
-        wallet, _ = Wallet.objects.select_for_update().get_or_create(
-            user_id=user_id
-        )
-        locked[user_id] = wallet
-    return locked
 
 
 def _release_hold(*, wallet, auction, previous_bid) -> None:
@@ -122,7 +108,7 @@ def place_bid(*, auction_id: int, bidder: User, amount_cents: int) -> BidOutcome
         wallet_ids = [bidder.id]
         if previous is not None:
             wallet_ids.append(previous.bidder_id)
-        wallets = _lock_wallets(wallet_ids)
+        wallets = lock_wallets(wallet_ids)
         wallet = wallets[bidder.id]
 
         available = wallet.balance_cents - wallet.committed_cents

@@ -5,6 +5,7 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from rest_framework.authtoken.models import Token
 
 from auctions.models import Auction
+from auctions.services import settle_if_expired
 
 from .groups import auction_group
 
@@ -76,6 +77,7 @@ class AuctionConsumer(AsyncJsonWebsocketConsumer):
 
     def _auction_state(self) -> dict:
         auction = Auction.objects.get(pk=self.auction_id)
+        settle_if_expired(auction)
         last = auction.bids.order_by("-seq").first()
 
         return {
