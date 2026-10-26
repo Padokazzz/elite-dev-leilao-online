@@ -39,6 +39,8 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CSRF_TRUSTED_ORIGINS = list(CORS_ALLOWED_ORIGINS)
 
+AUDIT_PSEUDO_SECRET = os.getenv("AUDIT_PSEUDO_SECRET", "").strip() or SECRET_KEY
+
 
 # Application definition
 
@@ -95,6 +97,7 @@ TEMPLATES = [
     },
 ]
 
+ASGI_APPLICATION = "config.asgi.application"
 WSGI_APPLICATION = "config.wsgi.application"
 
 
