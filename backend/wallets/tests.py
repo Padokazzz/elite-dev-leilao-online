@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.test import TestCase
@@ -285,3 +286,50 @@ class LedgerImmutabilityTests(TestCase):
 
         self.row.refresh_from_db()
         self.assertEqual(self.row.delta_cents, 10_000)
+
+
+class DepositThrottleTests(APITestCase):
+    """Regressão: o DRF só aplica o throttle se o VIEW declarar o escopo.
+
+    ScopedRateThrottle lê `view.throttle_scope` e ignora o `scope` da
+    subclasse (rest_framework/throttling.py:219). Sem o atributo no view,
+    ele devolve True sempre — o limite some em silêncio e a suíte continua
+    verde, porque nada afirma o 429.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user(
+            username="throttle_user",
+            email="throttle@example.com",
+            password="Strong-Password!2026",
+        )
+        self.token = Token.objects.create(user=self.user)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {self.token.key}"
+        )
+        self.deposit_url = "/api/wallets/deposit/"
+
+    @patch(
+        "rest_framework.throttling.ScopedRateThrottle.get_rate",
+        return_value="2/min",
+    )
+    def test_deposit_endpoint_enforces_its_scope(self, _mock_get_rate):
+        for _ in range(2):
+            response = self.client.post(
+                self.deposit_url,
+                {"amount": "10.00"},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.post(
+            self.deposit_url,
+            {"amount": "10.00"},
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        )

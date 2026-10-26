@@ -9,10 +9,6 @@ from .serializers import DepositSerializer, WalletSerializer
 from .services import deposit, get_or_create_wallet
 
 
-class DepositThrottle(ScopedRateThrottle):
-    scope = "wallet_deposit"
-
-
 class WalletView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -29,7 +25,10 @@ class WalletView(APIView):
 class DepositView(APIView):
 
     permission_classes = [IsAuthenticated]
-    throttle_classes = [DepositThrottle]
+    # O DRF lê o escopo no VIEW (ScopedRateThrottle.allow_request), nunca
+    # na subclasse: sem throttle_scope, o throttle devolve True sempre.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "wallet_deposit"
 
     def post(self, request):
         serializer = DepositSerializer(data=request.data)
