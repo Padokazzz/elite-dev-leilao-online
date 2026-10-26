@@ -11,6 +11,16 @@ def get_or_create_wallet(user) -> Wallet:
     return wallet
 
 
+def lock_wallets(user_ids) -> dict:
+    locked = {}
+    for user_id in sorted(set(user_ids)):
+        wallet, _ = Wallet.objects.select_for_update().get_or_create(
+            user_id=user_id
+        )
+        locked[user_id] = wallet
+    return locked
+
+
 def deposit(*, wallet_id: int, amount_cents: int) -> Wallet:
     if amount_cents < MIN_DEPOSIT_CENTS:
         raise ValueError("O depósito mínimo é de R$ 1,00.")

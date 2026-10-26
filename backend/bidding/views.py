@@ -7,6 +7,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from auctions.models import Auction
+from auctions.services import settle_if_expired
 
 from .exceptions import BidRejected
 from .groups import auction_group
@@ -43,6 +44,14 @@ class AuctionBidsView(APIView):
         return []
 
     def get(self, request, auction_id: int):
+        auction = Auction.objects.filter(pk=auction_id).first()
+        if auction is None:
+            return Response(
+                {"detail": "Não encontrado."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        settle_if_expired(auction)
+
         bids = Bid.objects.filter(auction_id=auction_id).order_by("-seq")[:50]
 
         return Response(
