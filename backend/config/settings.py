@@ -167,6 +167,7 @@ REST_FRAMEWORK = {
         "auth_register": "5/min",
         "catalog_search": "30/min",
         "wallet_deposit": "30/min",
+        "bid_place": "60/min",
     },
 }
 

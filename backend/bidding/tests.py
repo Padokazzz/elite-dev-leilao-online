@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Sum
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
+from django.core.cache import cache
 
 from auctions.models import Auction
 from catalog.models import AuctionItem
@@ -18,6 +19,12 @@ from .services import place_bid
 from threading import Thread
 
 from django.db import connections
+
+from unittest.mock import patch
+
+from rest_framework import status
+from rest_framework.authtoken.models import Token
+from rest_framework.test import APITestCase
 
 User = get_user_model()
 
@@ -481,3 +488,108 @@ class ConcurrentBidTests(TransactionTestCase):
             Auction.objects.get(pk=auction_id).ends_at,
             self.original_end,
         )
+
+class BidEndpointTests(APITestCase):
+    """Contrato HTTP do lance: status, corpo e throttle."""
+
+    def setUp(self):
+        cache.clear()
+        self.seller = make_user(
+            username="seller_api",
+            email="seller_api@example.com",
+            role=User.Role.AUCTIONEER,
+        )
+        self.alice = make_user(username="alice_api", email="alice_api@example.com")
+        self.bob = make_user(username="bob_api", email="bob_api@example.com")
+
+        self.auction = make_auction(self.seller)
+        self.url = f"/api/auctions/{self.auction.pk}/bids/"
+
+        fund(self.alice, 100_000)
+        fund(self.bob, 100_000)
+
+        self.alice_token = Token.objects.create(user=self.alice)
+        self.bob_token = Token.objects.create(user=self.bob)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {self.alice_token.key}"
+        )
+
+    def test_post_accepts_a_bid_and_returns_201(self):
+        response = self.client.post(
+            self.url, {"amount_cents": 10_000}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["bid"]["seq"], 1)
+        self.assertEqual(response.data["bid"]["amount_cents"], 10_000)
+        self.assertFalse(response.data["extended"])
+        self.assertEqual(response.data["next_minimum_cents"], 11_000)
+
+    def test_post_requires_authentication(self):
+        self.client.credentials()  # limpa o cabeçalho
+
+        response = self.client.post(
+            self.url, {"amount_cents": 10_000}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_post_below_minimum_returns_400_with_a_stable_code(self):
+        response = self.client.post(
+            self.url, {"amount_cents": 5_000}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "below_minimum")
+
+    def test_post_to_unknown_auction_returns_404(self):
+        response = self.client.post(
+            "/api/auctions/999999/bids/",
+            {"amount_cents": 10_000},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_malformed_payload_returns_a_field_error(self):
+        response = self.client.post(
+            self.url, {"amount_cents": "dez reais"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("amount_cents", response.data)
+
+    def test_get_returns_the_history_newest_first(self):
+        self.client.post(self.url, {"amount_cents": 10_000}, format="json")
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {self.bob_token.key}"
+        )
+        self.client.post(self.url, {"amount_cents": 12_000}, format="json")
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {self.alice_token.key}"
+        )
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([row["seq"] for row in response.data["results"]], [2, 1])
+        self.assertFalse(response.data["results"][0]["is_you"])   # lance do bob
+        self.assertTrue(response.data["results"][1]["is_you"])    # lance da alice
+
+    @patch(
+        "rest_framework.throttling.ScopedRateThrottle.get_rate",
+        return_value="2/min",
+    )
+    def test_posts_are_rate_limited_and_the_history_is_not(self, _mock):
+        # payload sempre recusado (abaixo do mínimo): barato, sem escrita
+        payload = {"amount_cents": 1}
+        for _ in range(2):
+            response = self.client.post(self.url, payload, format="json")
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        response = self.client.post(self.url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+        # a sala continua legível: o GET não entra no limite
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
