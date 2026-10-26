@@ -26,6 +26,10 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
+from channels.testing import WebsocketCommunicator
+
+from config.asgi import application
+
 User = get_user_model()
 
 def make_user(*, username, email, role=User.Role.BIDDER):
@@ -406,12 +410,6 @@ class AntiSnipeTests(PlaceBidTestCase):
         self.assertEqual(second.next_minimum_cents, 12_000)
 
 class ConcurrentBidTests(TransactionTestCase):
-    """Prova que o select_for_update serializa lances simultâneos.
-
-    Sem TransactionTestCase as threads não enxergariam os dados do
-    setUp nem o lock teria o mesmo efeito de produção.
-    """
-
     THREADS = 10
 
     def setUp(self):
@@ -490,7 +488,6 @@ class ConcurrentBidTests(TransactionTestCase):
         )
 
 class BidEndpointTests(APITestCase):
-    """Contrato HTTP do lance: status, corpo e throttle."""
 
     def setUp(self):
         cache.clear()
@@ -593,3 +590,82 @@ class BidEndpointTests(APITestCase):
         # a sala continua legível: o GET não entra no limite
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+class AuctionRoomTests(TransactionTestCase):
+    def setUp(self):
+        self.seller = make_user(
+            username="room_seller",
+            email="room_seller@example.com",
+            role=User.Role.AUCTIONEER,
+        )
+        self.alice = make_user(
+            username="room_alice", email="room_alice@example.com"
+        )
+        self.auction = make_auction(self.seller)
+        self.token = Token.objects.create(user=self.alice)
+        self.origin = [(b"origin", b"http://testserver")]
+
+    def _room(self, token=None):
+        path = f"/ws/auctions/{self.auction.pk}/"
+        if token:
+            path = f"{path}?token={token}"
+        return WebsocketCommunicator(application, path, headers=self.origin)
+
+    async def test_connects_with_token_and_receives_snapshot(self):
+        communicator = self._room(self.token.key)
+
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+
+        snapshot = await communicator.receive_json_from(timeout=2)
+
+        self.assertEqual(snapshot["type"], "room.snapshot")
+        self.assertEqual(snapshot["auction_id"], self.auction.pk)
+        self.assertEqual(snapshot["status"], "live")
+        self.assertIsNone(snapshot["last_bid_cents"])
+
+        await communicator.disconnect()
+
+    async def test_rejects_connection_without_token(self):
+        connected, code = await self._room().connect()
+
+        self.assertFalse(connected)
+        self.assertEqual(code, 4401)
+
+    async def test_rejects_foreign_origin(self):
+        communicator = WebsocketCommunicator(
+            application,
+            f"/ws/auctions/{self.auction.pk}/?token={self.token.key}",
+            headers=[(b"origin", b"http://evil.example")],
+        )
+
+        connected, _ = await communicator.connect()
+
+        self.assertFalse(connected)
+
+    async def test_rejects_unknown_auction(self):
+        communicator = WebsocketCommunicator(
+            application,
+            "/ws/auctions/999999/?token=" + self.token.key,
+            headers=self.origin,
+        )
+
+        connected, code = await communicator.connect()
+
+        self.assertFalse(connected)
+        self.assertEqual(code, 4404)
+
+    async def test_lance_nao_e_aceito_pelo_socket(self):
+        communicator = self._room(self.token.key)
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+        await communicator.receive_json_from(timeout=2)  # descarta o snapshot
+
+        await communicator.send_json_to(
+            {"type": "bid", "amount_cents": 10_000}
+        )
+        reply = await communicator.receive_json_from(timeout=2)
+
+        self.assertEqual(reply["type"], "room.error")
+
+        await communicator.disconnect()
