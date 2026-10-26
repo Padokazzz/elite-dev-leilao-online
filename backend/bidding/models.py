@@ -23,6 +23,8 @@ class Bid(models.Model):
     amount_cents = models.PositiveBigIntegerField()
     seq = models.PositiveIntegerField()
     accepted_at = models.DateTimeField(auto_now_add=True)
+    prev_hash = models.CharField(max_length=64, null=True, blank=True)
+    hash = models.CharField(max_length=64, null=True, blank=True, db_index=True)
 
     class Meta:
         ordering = ["seq"]

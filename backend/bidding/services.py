@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import hashlib
+import json
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -16,6 +18,26 @@ User = get_user_model()
 
 ANTI_SNIPE_WINDOW = timedelta(minutes=2)
 ANTI_SNIPE_EXTENSION = timedelta(minutes=2)
+
+GENESIS_HASH = "0" * 64
+
+
+def bid_hash(
+    *, prev_hash, auction_id, seq, bidder_id, amount_cents, accepted_at
+) -> str:
+    payload = json.dumps(
+        {
+            "accepted_at": accepted_at.isoformat(),
+            "amount_cents": amount_cents,
+            "auction_id": auction_id,
+            "bidder_id": bidder_id,
+            "prev_hash": prev_hash,
+            "seq": seq,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -145,6 +167,18 @@ def place_bid(*, auction_id: int, bidder: User, amount_cents: int) -> BidOutcome
             amount_cents=amount_cents,
             seq=seq,
         )
+
+        previous_hash = previous.hash if previous is not None else GENESIS_HASH
+        bid.prev_hash = previous_hash
+        bid.hash = bid_hash(
+            prev_hash=previous_hash,
+            auction_id=bid.auction_id,
+            seq=bid.seq,
+            bidder_id=bid.bidder_id,
+            amount_cents=bid.amount_cents,
+            accepted_at=bid.accepted_at,
+        )
+        bid.save(update_fields=["prev_hash", "hash"])
 
         extended = False
         if auction.ends_at - now <= ANTI_SNIPE_WINDOW:
