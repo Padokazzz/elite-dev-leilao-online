@@ -8,7 +8,9 @@ from django.utils import timezone
 from django.core.cache import cache
 
 from auctions.models import Auction
+from auctions.services import cancel_auction, settle_auction
 from catalog.models import AuctionItem
+from receipts.models import Receipt
 from wallets.models import Wallet, WalletTransaction
 from wallets.services import deposit, get_or_create_wallet
 
@@ -712,3 +714,124 @@ class AuctionRoomTests(APITransactionTestCase):
 
         await alice_room.disconnect()
         await bob_room.disconnect()
+
+
+class MyBidsTests(APITestCase):
+
+    def setUp(self):
+        cache.clear()
+        self.seller = make_user(
+            username="myb_seller",
+            email="myb_seller@example.com",
+            role=User.Role.AUCTIONEER,
+        )
+        self.alice = make_user(
+            username="myb_alice", email="myb_alice@example.com"
+        )
+        self.bob = make_user(username="myb_bob", email="myb_bob@example.com")
+
+        fund(self.alice, 100_000)
+        fund(self.bob, 100_000)
+
+        self.auction = make_auction(self.seller)
+        self.url = "/api/me/bids/"
+
+    def _auth(self, user):
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def test_my_bids_requires_authentication(self):
+        self.client.credentials()
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_my_bids_lists_my_bids_newest_first_with_states(self):
+        place_bid(
+            auction_id=self.auction.pk,
+            bidder=self.alice,
+            amount_cents=10_000,
+        )
+        place_bid(
+            auction_id=self.auction.pk,
+            bidder=self.bob,
+            amount_cents=11_000,
+        )
+        place_bid(
+            auction_id=self.auction.pk,
+            bidder=self.alice,
+            amount_cents=12_000,
+        )
+
+        self._auth(self.alice)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 2)
+
+        first, second = response.data["results"]
+        self.assertEqual(first["seq"], 3)
+        self.assertEqual(first["amount_cents"], 12_000)
+        self.assertEqual(first["state"], "leading")
+        self.assertEqual(first["auction_status"], Auction.Status.LIVE)
+        self.assertEqual(second["seq"], 1)
+        self.assertEqual(second["state"], "outbid")
+
+    def test_my_bids_marks_the_winning_bid_with_receipt(self):
+        place_bid(
+            auction_id=self.auction.pk,
+            bidder=self.alice,
+            amount_cents=10_000,
+        )
+        place_bid(
+            auction_id=self.auction.pk,
+            bidder=self.bob,
+            amount_cents=11_000,
+        )
+        place_bid(
+            auction_id=self.auction.pk,
+            bidder=self.alice,
+            amount_cents=12_000,
+        )
+        Auction.objects.filter(pk=self.auction.pk).update(
+            ends_at=timezone.now() - timedelta(minutes=1)
+        )
+        settle_auction(self.auction.pk)
+
+        receipt = Receipt.objects.get(auction=self.auction)
+
+        self._auth(self.alice)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 2)
+
+        winning, beaten = response.data["results"]
+        self.assertEqual(winning["state"], "won")
+        self.assertEqual(
+            winning["receipt_public_uuid"], str(receipt.public_uuid)
+        )
+        self.assertEqual(winning["auction_status"], Auction.Status.ENDED)
+        self.assertEqual(beaten["state"], "outbid")
+        self.assertIsNone(beaten["receipt_public_uuid"])
+        self.assertEqual(beaten["auction_status"], Auction.Status.ENDED)
+
+    def test_my_bids_marks_a_cancelled_lot(self):
+        place_bid(
+            auction_id=self.auction.pk,
+            bidder=self.alice,
+            amount_cents=10_000,
+        )
+        cancel_auction(auction_id=self.auction.pk, seller=self.seller)
+
+        self._auth(self.alice)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["state"], "cancelled")
+        self.assertEqual(
+            response.data["results"][0]["auction_status"],
+            Auction.Status.CANCELLED,
+        )

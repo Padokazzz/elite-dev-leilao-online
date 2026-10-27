@@ -1,5 +1,6 @@
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.db.models import Exists, OuterRef
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -7,7 +8,9 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from auctions.models import Auction
-from auctions.services import settle_if_expired
+from auctions.pagination import AuctionPagination
+from auctions.services import settle_expired_auctions, settle_if_expired
+from receipts.models import Receipt
 
 from .exceptions import BidRejected
 from .groups import auction_group
@@ -103,3 +106,66 @@ class AuctionBidsView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class MyBidsView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        settle_expired_auctions()
+
+        later_exists = Exists(
+            Bid.objects.filter(
+                auction=OuterRef("auction_id"),
+                seq__gt=OuterRef("seq"),
+            )
+        )
+
+        bids = (
+            Bid.objects.filter(bidder=request.user)
+            .select_related("auction", "auction__item")
+            .annotate(has_later=later_exists)
+            .order_by("-accepted_at", "-pk")
+        )
+
+        paginator = AuctionPagination()
+        page = paginator.paginate_queryset(bids, request)
+
+        receipts = dict(
+            Receipt.objects.filter(
+                auction_id__in=[bid.auction_id for bid in page],
+                winner=request.user,
+            ).values_list("auction_id", "public_uuid")
+        )
+
+        results = []
+        for bid in page:
+            auction = bid.auction
+
+            if bid.has_later:
+                state = "outbid"
+            elif auction.winner_id == request.user.pk:
+                state = "won"
+            elif auction.status == Auction.Status.CANCELLED:
+                state = "cancelled"
+            else:
+                state = "leading"
+
+            receipt = receipts.get(auction.pk)
+
+            results.append({
+                "seq": bid.seq,
+                "amount_cents": bid.amount_cents,
+                "accepted_at": bid.accepted_at.isoformat(),
+                "auction_id": auction.pk,
+                "auction_title": auction.item.title,
+                "auction_status": auction.status,
+                "ends_at": auction.ends_at.isoformat(),
+                "state": state,
+                "receipt_public_uuid": (
+                    str(receipt) if state == "won" and receipt else None
+                ),
+            })
+
+        return paginator.get_paginated_response(results)

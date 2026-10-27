@@ -1,15 +1,16 @@
 from audit.services import pseudo
-from django.db.models import Count
+from django.db.models import Count, Sum
 from rest_framework import status
-from rest_framework.exceptions import NotFound
-from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.permissions import IsAuctioneer
+from receipts.models import Receipt
 
 from .models import Auction
+from .pagination import AuctionPagination
 from .serializers import AuctionCreateSerializer, AuctionScheduleSerializer
 from .services import (
     CancelRejected,
@@ -18,11 +19,59 @@ from .services import (
     settle_if_expired,
 )
 
+CATALOG_STATUSES = {
+    Auction.Status.SCHEDULED,
+    Auction.Status.LIVE,
+    Auction.Status.ENDED,
+}
 
-class AuctionPagination(PageNumberPagination):
-    page_size = 12
-    page_size_query_param = "page_size"
-    max_page_size = 50
+PANEL_STATUSES = CATALOG_STATUSES | {Auction.Status.CANCELLED}
+
+
+def _filter_auctions(request, auctions, *, statuses):
+    status_value = request.query_params.get("status")
+    if status_value is not None and status_value not in statuses:
+        raise ValidationError({"detail": "Status inválido."})
+    if status_value:
+        auctions = auctions.filter(status=status_value)
+
+    ordering = request.query_params.get("ordering", "ends_at")
+    if ordering.lstrip("-") not in {
+        "ends_at",
+        "starts_at",
+        "starting_bid_cents",
+    }:
+        raise ValidationError({"detail": "Ordenação inválida."})
+
+    bounds = {}
+    for name, lookup in (
+        ("min_price", "starting_bid_cents__gte"),
+        ("max_price", "starting_bid_cents__lte"),
+    ):
+        raw = request.query_params.get(name)
+        if raw is None:
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            raise ValidationError({name: "Valor inválido."})
+        if value < 0:
+            raise ValidationError({name: "Valor inválido."})
+        bounds[name] = value
+        auctions = auctions.filter(**{lookup: value})
+
+    if (
+        "min_price" in bounds
+        and "max_price" in bounds
+        and bounds["min_price"] > bounds["max_price"]
+    ):
+        raise ValidationError({"detail": "Faixa de preço inválida."})
+
+    query = request.query_params.get("q", "").strip()
+    if query:
+        auctions = auctions.filter(item__title__icontains=query)
+
+    return auctions.order_by(ordering, "id")
 
 
 def auction_payload(auction: Auction) -> dict:
@@ -69,41 +118,14 @@ class AuctionListCreateView(APIView):
     def get(self, request):
         settle_expired_auctions()
 
-        status_value = request.query_params.get("status")
-        if status_value is not None and status_value not in {
-            Auction.Status.SCHEDULED,
-            Auction.Status.LIVE,
-            Auction.Status.ENDED,
-        }:
-            return Response(
-                {"detail": "Status inválido."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        ordering = request.query_params.get("ordering", "ends_at")
-        if ordering.lstrip("-") not in {
-            "ends_at",
-            "starts_at",
-            "starting_bid_cents",
-        }:
-            return Response(
-                {"detail": "Ordenação inválida."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         auctions = (
             Auction.objects.select_related("item", "seller", "winner")
             .annotate(bid_count=Count("bids"))
             .exclude(status=Auction.Status.CANCELLED)
-            .order_by(ordering, "id")
         )
-
-        if status_value:
-            auctions = auctions.filter(status=status_value)
-
-        query = request.query_params.get("q", "").strip()
-        if query:
-            auctions = auctions.filter(item__title__icontains=query)
+        auctions = _filter_auctions(
+            request, auctions, statuses=CATALOG_STATUSES
+        )
 
         paginator = AuctionPagination()
         page = paginator.paginate_queryset(auctions, request)
@@ -187,3 +209,95 @@ class AuctionCancelView(APIView):
         auction = Auction.objects.select_related("item").get(pk=auction.pk)
 
         return Response(auction_payload(auction))
+
+
+class AuctionMineView(APIView):
+    permission_classes = [IsAuthenticated, IsAuctioneer]
+
+    def get(self, request):
+        settle_expired_auctions()
+
+        auctions = (
+            Auction.objects.select_related("item", "seller", "winner")
+            .annotate(bid_count=Count("bids"))
+            .filter(seller=request.user)
+        )
+        auctions = _filter_auctions(
+            request, auctions, statuses=PANEL_STATUSES
+        )
+
+        paginator = AuctionPagination()
+        page = paginator.paginate_queryset(auctions, request)
+
+        receipts = dict(
+            Receipt.objects.filter(
+                auction_id__in=[auction.pk for auction in page]
+            ).values_list("auction_id", "amount_cents")
+        )
+
+        results = [
+            {
+                **auction_payload(auction),
+                "bid_count": auction.bid_count,
+                "received_cents": (
+                    receipts.get(auction.pk, 0)
+                    if auction.status == Auction.Status.ENDED
+                    else None
+                ),
+            }
+            for auction in page
+        ]
+
+        total = (
+            Receipt.objects.filter(auction__seller=request.user)
+            .aggregate(total=Sum("amount_cents"))["total"]
+            or 0
+        )
+
+        return Response({
+            "count": paginator.page.paginator.count,
+            "next": paginator.get_next_link(),
+            "previous": paginator.get_previous_link(),
+            "results": results,
+            "summary": {"total_received_cents": total},
+        })
+
+
+class AuctionWonView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        settle_expired_auctions()
+
+        auctions = (
+            Auction.objects.select_related("item", "seller", "winner")
+            .annotate(bid_count=Count("bids"))
+            .filter(winner=request.user)
+        )
+        auctions = _filter_auctions(
+            request, auctions, statuses=CATALOG_STATUSES
+        )
+
+        paginator = AuctionPagination()
+        page = paginator.paginate_queryset(auctions, request)
+
+        receipts = dict(
+            Receipt.objects.filter(
+                auction_id__in=[auction.pk for auction in page]
+            ).values_list("auction_id", "public_uuid")
+        )
+
+        return paginator.get_paginated_response(
+            [
+                {
+                    **auction_payload(auction),
+                    "bid_count": auction.bid_count,
+                    "receipt_public_uuid": (
+                        str(receipts[auction.pk])
+                        if auction.pk in receipts
+                        else None
+                    ),
+                }
+                for auction in page
+            ]
+        )

@@ -587,3 +587,250 @@ class AuctionVitrineTests(APITestCase):
             response.data["winner_pseudonym"], pseudo(self.alice)
         )
         self.assertTrue(Receipt.objects.filter(auction=auction).exists())
+
+
+class AuctionPanelTests(APITestCase):
+
+    def setUp(self):
+        self.seller = make_user(
+            username="pan_seller",
+            email="pan_seller@example.com",
+            role=User.Role.AUCTIONEER,
+        )
+        self.other = make_user(
+            username="pan_other",
+            email="pan_other@example.com",
+            role=User.Role.AUCTIONEER,
+        )
+        self.alice = make_user(
+            username="pan_alice", email="pan_alice@example.com"
+        )
+        self.bob = make_user(username="pan_bob", email="pan_bob@example.com")
+
+        fund(self.alice, 100_000)
+        fund(self.bob, 100_000)
+
+        self.url = "/api/auctions/"
+
+    def _auth(self, user):
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def _expire(self, auction):
+        Auction.objects.filter(pk=auction.pk).update(
+            ends_at=timezone.now() - timedelta(minutes=1)
+        )
+        auction.refresh_from_db()
+
+    def test_list_filters_by_price_range(self):
+        cheap = make_auction(self.seller, starting_bid_cents=10_000)
+        expensive = make_auction(self.seller, starting_bid_cents=50_000)
+
+        above = self.client.get(self.url, {"min_price": "20000"})
+        below = self.client.get(self.url, {"max_price": "20000"})
+
+        self.assertEqual(above.data["count"], 1)
+        self.assertEqual(above.data["results"][0]["id"], expensive.pk)
+        self.assertEqual(below.data["count"], 1)
+        self.assertEqual(below.data["results"][0]["id"], cheap.pk)
+
+    def test_list_rejects_an_invalid_price_range(self):
+        crossed = self.client.get(
+            self.url, {"min_price": "60000", "max_price": "10000"}
+        )
+        garbled = self.client.get(self.url, {"min_price": "abc"})
+
+        self.assertEqual(crossed.status_code, 400)
+        self.assertEqual(garbled.status_code, 400)
+
+    def test_mine_requires_authentication(self):
+        self.client.credentials()
+
+        response = self.client.get(f"{self.url}mine/")
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_bidder_cannot_open_the_panel(self):
+        self._auth(self.alice)
+
+        response = self.client.get(f"{self.url}mine/")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_mine_returns_only_my_lots_including_cancelled(self):
+        live = make_auction(self.seller, status=Auction.Status.LIVE)
+        cancelled = make_auction(
+            self.seller, status=Auction.Status.CANCELLED
+        )
+        make_auction(self.other, status=Auction.Status.LIVE)
+
+        self._auth(self.seller)
+        panel = self.client.get(f"{self.url}mine/")
+        catalog = self.client.get(self.url)
+
+        self.assertEqual(panel.status_code, 200)
+        self.assertEqual(panel.data["count"], 2)
+        self.assertEqual(
+            {row["id"] for row in panel.data["results"]},
+            {live.pk, cancelled.pk},
+        )
+        self.assertEqual(catalog.data["count"], 2)
+        self.assertNotIn(
+            cancelled.pk,
+            {row["id"] for row in catalog.data["results"]},
+        )
+
+    def test_mine_allows_the_cancelled_status_filter(self):
+        make_auction(self.seller, status=Auction.Status.CANCELLED)
+        make_auction(self.seller, status=Auction.Status.LIVE)
+
+        self._auth(self.seller)
+        panel = self.client.get(
+            f"{self.url}mine/", {"status": "cancelled"}
+        )
+        catalog = self.client.get(self.url, {"status": "cancelled"})
+
+        self.assertEqual(panel.status_code, 200)
+        self.assertEqual(panel.data["count"], 1)
+        self.assertEqual(catalog.status_code, 400)
+
+    def test_mine_reports_received_amount_and_total(self):
+        sold = make_auction(self.seller, status=Auction.Status.SCHEDULED)
+        place_bid(
+            auction_id=sold.pk, bidder=self.alice, amount_cents=10_000
+        )
+        place_bid(
+            auction_id=sold.pk, bidder=self.bob, amount_cents=11_000
+        )
+        self._expire(sold)
+        settle_auction(sold.pk)
+
+        unsold = make_auction(
+            self.seller,
+            status=Auction.Status.LIVE,
+            ends_in=timedelta(minutes=-1),
+        )
+        settle_auction(unsold.pk)
+
+        running = make_auction(
+            self.seller,
+            status=Auction.Status.LIVE,
+            ends_in=timedelta(hours=2),
+        )
+
+        self._auth(self.seller)
+        response = self.client.get(f"{self.url}mine/")
+
+        rows = {row["id"]: row for row in response.data["results"]}
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 3)
+        self.assertEqual(rows[sold.pk]["received_cents"], 11_000)
+        self.assertEqual(rows[unsold.pk]["received_cents"], 0)
+        self.assertIsNone(rows[running.pk]["received_cents"])
+        self.assertEqual(
+            response.data["summary"]["total_received_cents"], 11_000
+        )
+
+
+class AuctionWonTests(APITestCase):
+
+    def setUp(self):
+        self.seller = make_user(
+            username="won_seller",
+            email="won_seller@example.com",
+            role=User.Role.AUCTIONEER,
+        )
+        self.alice = make_user(
+            username="won_alice", email="won_alice@example.com"
+        )
+        self.bob = make_user(username="won_bob", email="won_bob@example.com")
+
+        fund(self.alice, 100_000)
+        fund(self.bob, 100_000)
+
+        self.url = "/api/auctions/won/"
+
+    def _auth(self, user):
+        token = Token.objects.create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def _auction(self):
+        return make_auction(self.seller, status=Auction.Status.SCHEDULED)
+
+    def _expire(self, auction):
+        Auction.objects.filter(pk=auction.pk).update(
+            ends_at=timezone.now() - timedelta(minutes=1)
+        )
+        auction.refresh_from_db()
+
+    def test_won_requires_authentication(self):
+        self.client.credentials()
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_won_is_empty_before_settlement(self):
+        auction = self._auction()
+        place_bid(
+            auction_id=auction.pk, bidder=self.alice, amount_cents=10_000
+        )
+        place_bid(
+            auction_id=auction.pk, bidder=self.bob, amount_cents=11_000
+        )
+
+        self._auth(self.bob)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 0)
+
+    def test_won_lists_settled_wins_with_receipt(self):
+        auction = self._auction()
+        place_bid(
+            auction_id=auction.pk, bidder=self.alice, amount_cents=10_000
+        )
+        place_bid(
+            auction_id=auction.pk, bidder=self.bob, amount_cents=11_000
+        )
+        place_bid(
+            auction_id=auction.pk, bidder=self.alice, amount_cents=12_000
+        )
+        self._expire(auction)
+        settle_auction(auction.pk)
+
+        receipt = Receipt.objects.get(auction=auction)
+
+        self._auth(self.alice)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+
+        row = response.data["results"][0]
+        self.assertEqual(row["status"], Auction.Status.ENDED)
+        self.assertEqual(row["winner_pseudonym"], pseudo(self.alice))
+        self.assertEqual(
+            row["receipt_public_uuid"], str(receipt.public_uuid)
+        )
+        self.assertEqual(row["seller_pseudonym"], pseudo(self.seller))
+        self.assertNotIn("seller_id", row)
+        self.assertNotIn("winner_id", row)
+
+    def test_won_excludes_lots_i_lost(self):
+        auction = self._auction()
+        place_bid(
+            auction_id=auction.pk, bidder=self.alice, amount_cents=10_000
+        )
+        place_bid(
+            auction_id=auction.pk, bidder=self.bob, amount_cents=11_000
+        )
+        self._expire(auction)
+        settle_auction(auction.pk)
+
+        self._auth(self.alice)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 0)

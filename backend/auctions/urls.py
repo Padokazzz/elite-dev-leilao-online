@@ -6,6 +6,8 @@ from . import views
 
 urlpatterns = [
     path("", views.AuctionListCreateView.as_view(), name="auction-list"),
+    path("mine/", views.AuctionMineView.as_view(), name="auction-mine"),
+    path("won/", views.AuctionWonView.as_view(), name="auction-won"),
     path("<int:auction_id>/bids/", include("bidding.urls")),
     path(
         "<int:auction_id>/audit/",
