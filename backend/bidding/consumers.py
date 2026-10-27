@@ -50,6 +50,28 @@ class AuctionConsumer(AsyncJsonWebsocketConsumer):
                 "extended": event["extended"],
                 "ends_at": event["ends_at"],
                 "next_minimum_cents": event["next_minimum_cents"],
+                "is_you": event["bidder_id"] == self.user.pk,
+            }
+        )
+
+    async def auction_closed(self, event):
+        await self.send_json(
+            {
+                "type": "auction.closed",
+                "auction_id": event["auction_id"],
+                "winner_pseudonym": event["winner_pseudonym"],
+                "receipt_public_uuid": event["receipt_public_uuid"],
+                "amount_cents": event["amount_cents"],
+                "you_won": event["winner_id"] is not None
+                and event["winner_id"] == self.user.pk,
+            }
+        )
+
+    async def auction_cancelled(self, event):
+        await self.send_json(
+            {
+                "type": "auction.cancelled",
+                "auction_id": event["auction_id"],
             }
         )
 
@@ -89,4 +111,5 @@ class AuctionConsumer(AsyncJsonWebsocketConsumer):
             "minimum_increment_cents": auction.minimum_increment_cents,
             "last_bid_cents": last.amount_cents if last else None,
             "last_seq": last.seq if last else 0,
+            "you_lead": last is not None and last.bidder_id == self.user.pk,
         }

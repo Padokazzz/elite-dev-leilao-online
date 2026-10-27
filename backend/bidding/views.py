@@ -1,5 +1,3 @@
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
 from django.db.models import Exists, OuterRef
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -12,28 +10,11 @@ from auctions.pagination import AuctionPagination
 from auctions.services import settle_expired_auctions, settle_if_expired
 from receipts.models import Receipt
 
+from .events import publish_bid_placed
 from .exceptions import BidRejected
-from .groups import auction_group
 from .models import Bid
 from .serializers import PlaceBidSerializer
-from .services import BidOutcome, place_bid
-
-
-def _publish_bid(auction_id: int, outcome: BidOutcome) -> None:
-    async_to_sync(get_channel_layer().group_send)(
-        auction_group(auction_id),
-        {
-            "type": "bid.placed",
-            "bid": {
-                "seq": outcome.bid.seq,
-                "amount_cents": outcome.bid.amount_cents,
-                "accepted_at": outcome.bid.accepted_at.isoformat(),
-            },
-            "extended": outcome.extended,
-            "ends_at": outcome.ends_at.isoformat(),
-            "next_minimum_cents": outcome.next_minimum_cents,
-        },
-    )
+from .services import place_bid
 
 
 class AuctionBidsView(APIView):
@@ -91,7 +72,11 @@ class AuctionBidsView(APIView):
         except BidRejected as exc:
             return Response(exc.as_dict(), status=status.HTTP_400_BAD_REQUEST)
 
-        _publish_bid(auction_id, outcome)
+        publish_bid_placed(
+            auction_id=auction_id,
+            bidder_id=request.user.pk,
+            outcome=outcome,
+        )
 
         return Response(
             {

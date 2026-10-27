@@ -1,7 +1,10 @@
 from django.db import transaction
 from django.utils import timezone
 
+from audit.services import pseudo
+from bidding.events import publish_auction_cancelled, publish_auction_closed
 from receipts.models import Receipt
+from wallets.exceptions import HoldInconsistentError
 from wallets.models import WalletTransaction
 from wallets.services import lock_wallets, release_hold
 
@@ -22,6 +25,15 @@ def settle_auction(auction_id: int) -> bool:
         if winner_bid is None:
             auction.status = Auction.Status.ENDED
             auction.save(update_fields=["status", "updated_at"])
+            transaction.on_commit(
+                lambda: publish_auction_closed(
+                    auction_id=auction.pk,
+                    winner_id=None,
+                    winner_pseudonym=None,
+                    receipt_public_uuid=None,
+                    amount_cents=None,
+                )
+            )
             return True
 
         wallets = lock_wallets([winner_bid.bidder_id, auction.seller_id])
@@ -60,11 +72,21 @@ def settle_auction(auction_id: int) -> bool:
         auction.winner = winner_bid.bidder
         auction.save(update_fields=["status", "winner", "updated_at"])
 
-        Receipt.objects.create(
+        receipt = Receipt.objects.create(
             auction=auction,
             winner=winner_bid.bidder,
             seller=auction.seller,
             amount_cents=amount,
+        )
+
+        transaction.on_commit(
+            lambda: publish_auction_closed(
+                auction_id=auction.pk,
+                winner_id=winner_bid.bidder_id,
+                winner_pseudonym=pseudo(winner_bid.bidder),
+                receipt_public_uuid=str(receipt.public_uuid),
+                amount_cents=amount,
+            )
         )
 
         return True
@@ -122,5 +144,8 @@ def cancel_auction(*, auction_id: int, seller) -> Auction:
 
         auction.status = Auction.Status.CANCELLED
         auction.save(update_fields=["status", "updated_at"])
+        transaction.on_commit(
+            lambda: publish_auction_cancelled(auction.pk)
+        )
 
     return auction
