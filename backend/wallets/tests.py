@@ -53,6 +53,13 @@ class WalletModelTests(TestCase):
             with transaction.atomic():
                 self.wallet.save()
 
+    def test_database_rejects_a_negative_commitment(self):
+        self.wallet.committed_cents = -1
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                self.wallet.save()
+
     def test_wallet_is_created_only_once_per_user(self):
         first = get_or_create_wallet(self.user)
         second = get_or_create_wallet(self.user)

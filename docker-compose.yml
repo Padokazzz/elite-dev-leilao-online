@@ -46,6 +46,7 @@ services:
     build: ./backend
     command: python manage.py runserver 0.0.0.0:8000
     environment: *backend-env
+    restart: unless-stopped
     volumes:
       - ./backend:/app
     ports:
@@ -60,6 +61,7 @@ services:
     build: ./backend
     command: python manage.py settle_auctions_loop --interval 5
     environment: *backend-env
+    restart: unless-stopped
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 
 from accounts.permissions import IsAuctioneer
 from receipts.models import Receipt
+from wallets.exceptions import HoldInconsistentError
 
 from .models import Auction
 from .pagination import AuctionPagination
@@ -203,6 +204,11 @@ class AuctionCancelView(APIView):
                 return _not_owner()
             return Response(
                 {"detail": "Este lote não pode mais ser cancelado."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except HoldInconsistentError:
+            return Response(
+                {"detail": "Estado inconsistente de hold; contate o suporte."},
                 status=status.HTTP_409_CONFLICT,
             )
 

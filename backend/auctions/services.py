@@ -1,3 +1,5 @@
+import logging
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -9,6 +11,8 @@ from wallets.models import WalletTransaction
 from wallets.services import lock_wallets, release_hold
 
 from .models import Auction
+
+logger = logging.getLogger(__name__)
 
 
 def settle_auction(auction_id: int) -> bool:
@@ -40,6 +44,11 @@ def settle_auction(auction_id: int) -> bool:
         winner_wallet = wallets[winner_bid.bidder_id]
         seller_wallet = wallets[auction.seller_id]
         amount = winner_bid.amount_cents
+
+        if winner_wallet.committed_cents < amount:
+            raise HoldInconsistentError(
+                "Saldo comprometido inconsistente ao liquidar o lote."
+            )
 
         winner_wallet.balance_cents -= amount
         winner_wallet.committed_cents -= amount
@@ -100,7 +109,15 @@ def settle_expired_auctions() -> int:
         ).values_list("pk", flat=True)
     )
 
-    return sum(1 for auction_id in expired if settle_auction(auction_id))
+    settled = 0
+    for auction_id in expired:
+        try:
+            if settle_auction(auction_id):
+                settled += 1
+        except Exception:
+            logger.exception("falha ao liquidar o lote %s", auction_id)
+
+    return settled
 
 
 def settle_if_expired(auction: Auction) -> Auction:
@@ -109,8 +126,15 @@ def settle_if_expired(auction: Auction) -> Auction:
         Auction.Status.SCHEDULED,
     ) and auction.ends_at <= timezone.now()
 
-    if pending and settle_auction(auction.pk):
-        auction.refresh_from_db()
+    if pending:
+        try:
+            settled = settle_auction(auction.pk)
+        except Exception:
+            logger.exception("falha ao liquidar o lote %s", auction.pk)
+            settled = False
+
+        if settled:
+            auction.refresh_from_db()
 
     return auction
 
