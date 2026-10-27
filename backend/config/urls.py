@@ -18,6 +18,8 @@ from django.contrib import admin
 from django.urls import path, include
 from django.http import JsonResponse
 
+from bidding.views import MyBidsView
+
 def health_check(request):
     return JsonResponse({
         "status": "ok",
@@ -31,5 +33,6 @@ urlpatterns = [
     path("api/catalog/", include("catalog.urls")),
     path("api/wallets/", include("wallets.urls")),
     path("api/auctions/", include("auctions.urls")),
+    path("api/me/bids/", MyBidsView.as_view(), name="my-bids"),
     path("api/receipts/", include("receipts.urls")),
 ]
