@@ -38,6 +38,13 @@ def verify_chain(auction) -> dict:
             }
             break
 
+        if bid.prev_hash != expected_prev:
+            tampered = {
+                "seq": bid.seq,
+                "reason": "prev_hash_mismatch",
+            }
+            break
+
         computed = bid_hash(
             prev_hash=expected_prev,
             auction_id=bid.auction_id,
@@ -51,8 +58,6 @@ def verify_chain(auction) -> dict:
             tampered = {
                 "seq": bid.seq,
                 "reason": "hash_mismatch",
-                "stored_hash": bid.hash,
-                "computed_hash": computed,
             }
             break
 
@@ -62,8 +67,6 @@ def verify_chain(auction) -> dict:
                 "amount_cents": bid.amount_cents,
                 "accepted_at": bid.accepted_at,
                 "bidder": pseudo(bid.bidder),
-                "prev_hash": bid.prev_hash,
-                "hash": bid.hash,
             }
         )
 
