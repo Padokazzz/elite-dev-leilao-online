@@ -395,6 +395,20 @@ class AuctionManagementTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(Auction.objects.count(), 0)
 
+    def test_create_rejects_a_past_window_that_already_started(self):
+        now = timezone.now()
+        response = self.client.post(
+            self.url,
+            self._payload(
+                starts_at=(now - timedelta(hours=3)).isoformat(),
+                ends_at=(now - timedelta(hours=1)).isoformat(),
+            ),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Auction.objects.count(), 0)
+
     def test_patch_is_rejected_for_another_auctioneer(self):
         auction = make_auction(self.seller, status=Auction.Status.SCHEDULED)
         self._auth(self.other)
@@ -468,6 +482,56 @@ class AuctionManagementTests(APITestCase):
         self.assertEqual(response.data["starting_bid_cents"], 10_000)
         auction.refresh_from_db()
         self.assertEqual(auction.starting_bid_cents, 10_000)
+
+    def test_patch_rejects_an_end_in_the_past(self):
+        auction = make_auction(self.seller, status=Auction.Status.SCHEDULED)
+        original_end = auction.ends_at
+
+        response = self.client.patch(
+            f"{self.url}{auction.pk}/",
+            {"ends_at": (timezone.now() - timedelta(minutes=5)).isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        auction.refresh_from_db()
+        self.assertEqual(auction.ends_at, original_end)
+
+    def test_patch_settles_an_expired_lot_before_rejecting(self):
+        auction = make_auction(self.seller, status=Auction.Status.SCHEDULED)
+        place_bid(
+            auction_id=auction.pk, bidder=self.alice, amount_cents=10_000
+        )
+        self._expire(auction)
+
+        response = self.client.patch(
+            f"{self.url}{auction.pk}/",
+            {"ends_at": (timezone.now() + timedelta(hours=2)).isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        auction.refresh_from_db()
+        self.assertEqual(auction.status, Auction.Status.ENDED)
+        self.assertTrue(Receipt.objects.filter(auction=auction).exists())
+
+    def test_patch_only_moves_the_boundary_it_received(self):
+        auction = make_auction(self.seller, status=Auction.Status.SCHEDULED)
+        original_start = auction.starts_at
+        new_end = timezone.now() + timedelta(hours=3)
+
+        response = self.client.patch(
+            f"{self.url}{auction.pk}/",
+            {"ends_at": new_end.isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        auction.refresh_from_db()
+        self.assertEqual(auction.starts_at, original_start)
+        self.assertAlmostEqual(
+            auction.ends_at, new_end, delta=timedelta(seconds=1)
+        )
 
     def test_cancel_releases_the_leader_hold(self):
         auction = make_auction(self.seller, status=Auction.Status.SCHEDULED)

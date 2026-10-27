@@ -139,6 +139,31 @@ def settle_if_expired(auction: Auction) -> Auction:
     return auction
 
 
+class RescheduleRejected(Exception):
+    pass
+
+
+def reschedule_auction(*, auction_id: int, starts_at, ends_at) -> Auction:
+    with transaction.atomic():
+        auction = (
+            Auction.objects.select_for_update(of=("self",))
+            .select_related("item", "seller", "winner")
+            .get(pk=auction_id)
+        )
+
+        settle_if_expired(auction)
+
+        if auction.status == Auction.Status.SCHEDULED:
+            auction.starts_at = starts_at
+            auction.ends_at = ends_at
+            auction.save(update_fields=["starts_at", "ends_at", "updated_at"])
+
+    if auction.status != Auction.Status.SCHEDULED:
+        raise RescheduleRejected
+
+    return auction
+
+
 class CancelRejected(Exception):
     pass
 

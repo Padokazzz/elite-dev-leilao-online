@@ -79,4 +79,9 @@ class AuctionScheduleSerializer(serializers.ModelSerializer):
                 {"ends_at": "O fim deve ser depois do início."}
             )
 
+        if ends_at and ends_at <= timezone.now():
+            raise serializers.ValidationError(
+                {"ends_at": "O fim já passou."}
+            )
+
         return attrs

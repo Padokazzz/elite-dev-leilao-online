@@ -15,7 +15,9 @@ from .pagination import AuctionPagination
 from .serializers import AuctionCreateSerializer, AuctionScheduleSerializer
 from .services import (
     CancelRejected,
+    RescheduleRejected,
     cancel_auction,
+    reschedule_auction,
     settle_expired_auctions,
     settle_if_expired,
 )
@@ -169,21 +171,28 @@ class AuctionManageView(APIView):
         if auction.seller_id != request.user.pk:
             return _not_owner()
 
-        auction = settle_if_expired(auction)
-
-        if auction.status != Auction.Status.SCHEDULED:
-            return Response(
-                {"detail": "A programação só muda antes do lote começar."},
-                status=status.HTTP_409_CONFLICT,
-            )
-
         serializer = AuctionScheduleSerializer(
             instance=auction,
             data=request.data,
             partial=True,
         )
         serializer.is_valid(raise_exception=True)
-        auction = serializer.save()
+
+        try:
+            auction = reschedule_auction(
+                auction_id=auction.pk,
+                starts_at=serializer.validated_data.get(
+                    "starts_at", auction.starts_at
+                ),
+                ends_at=serializer.validated_data.get(
+                    "ends_at", auction.ends_at
+                ),
+            )
+        except RescheduleRejected:
+            return Response(
+                {"detail": "A programação só muda antes do lote começar."},
+                status=status.HTTP_409_CONFLICT,
+            )
 
         return Response(auction_payload(auction))
 
