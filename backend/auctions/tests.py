@@ -8,6 +8,7 @@ from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
+from audit.services import pseudo
 from bidding.services import place_bid
 from bidding.tests import fund, make_auction, make_user
 from catalog.models import AuctionItem
@@ -218,7 +219,8 @@ class AuctionManagementTests(APITestCase):
         self.assertEqual(response.data["status"], Auction.Status.SCHEDULED)
         self.assertEqual(response.data["item_id"], self.item.pk)
         self.assertEqual(response.data["starting_bid_cents"], 10_000)
-        self.assertEqual(response.data["seller_id"], self.seller.pk)
+        self.assertEqual(response.data["seller_pseudonym"], pseudo(self.seller))
+        self.assertNotIn("seller_id", response.data)
         self.assertEqual(Auction.objects.count(), 1)
 
     def test_create_rejects_an_unknown_item(self):
@@ -413,3 +415,175 @@ class AuctionManagementTests(APITestCase):
         self.assertEqual(
             Wallet.objects.get(user=self.alice).committed_cents, 0
         )
+
+
+class AuctionVitrineTests(APITestCase):
+
+    def setUp(self):
+        self.seller = make_user(
+            username="vit_seller",
+            email="vit_seller@example.com",
+            role=User.Role.AUCTIONEER,
+        )
+        self.alice = make_user(
+            username="vit_alice", email="vit_alice@example.com"
+        )
+        fund(self.alice, 100_000)
+
+        self.url = "/api/auctions/"
+
+    def _auction(self, *, title="Obra de teste", **kwargs):
+        auction = make_auction(self.seller, **kwargs)
+
+        if title != "Obra de teste":
+            auction.item.title = title
+            auction.item.save(update_fields=["title"])
+
+        return auction
+
+    def _expire(self, auction):
+        Auction.objects.filter(pk=auction.pk).update(
+            ends_at=timezone.now() - timedelta(minutes=1)
+        )
+        auction.refresh_from_db()
+
+    def test_list_is_public(self):
+        auction = self._auction()
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], auction.pk)
+        self.assertEqual(
+            response.data["results"][0]["seller_pseudonym"],
+            pseudo(self.seller),
+        )
+
+    def test_list_hides_cancelled_lots(self):
+        live = self._auction(status=Auction.Status.LIVE)
+        self._auction(status=Auction.Status.CANCELLED)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], live.pk)
+
+    def test_list_filters_by_status(self):
+        self._auction(status=Auction.Status.LIVE)
+        scheduled = self._auction(
+            status=Auction.Status.SCHEDULED,
+            starts_in=timedelta(hours=1),
+            ends_in=timedelta(hours=5),
+        )
+
+        response = self.client.get(self.url, {"status": "scheduled"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], scheduled.pk)
+
+    def test_list_rejects_unknown_status_and_ordering(self):
+        self.assertEqual(
+            self.client.get(self.url, {"status": "cancelled"}).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.get(self.url, {"ordering": "seller_id"}).status_code,
+            400,
+        )
+
+    def test_list_searches_by_title(self):
+        picasso = self._auction(title="Guernica")
+        self._auction(title="Noite estrelada")
+
+        response = self.client.get(self.url, {"q": "guern"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], picasso.pk)
+
+    def test_list_orders_soonest_ending_first(self):
+        late = self._auction(ends_in=timedelta(hours=5))
+        soon = self._auction(ends_in=timedelta(hours=1))
+
+        response = self.client.get(self.url)
+
+        ids = [item["id"] for item in response.data["results"]]
+        self.assertEqual(ids, [soon.pk, late.pk])
+
+    def test_list_paginates(self):
+        for hours in range(1, 16):
+            self._auction(ends_in=timedelta(hours=hours))
+
+        first = self.client.get(self.url, {"page_size": 10})
+        second = self.client.get(self.url, {"page_size": 10, "page": 2})
+
+        self.assertEqual(first.data["count"], 15)
+        self.assertEqual(len(first.data["results"]), 10)
+        self.assertIsNotNone(first.data["next"])
+        self.assertEqual(len(second.data["results"]), 5)
+        self.assertIsNone(second.data["next"])
+
+        ids = [item["id"] for item in first.data["results"]]
+        ids += [item["id"] for item in second.data["results"]]
+        self.assertEqual(len(set(ids)), 15)
+
+    def test_list_caps_page_size(self):
+        for hours in range(1, 61):
+            self._auction(ends_in=timedelta(hours=hours))
+
+        response = self.client.get(self.url, {"page_size": 999})
+
+        self.assertEqual(response.data["count"], 60)
+        self.assertEqual(len(response.data["results"]), 50)
+
+    def test_list_settles_expired_before_returning(self):
+        auction = self._auction(status=Auction.Status.SCHEDULED)
+        place_bid(
+            auction_id=auction.pk, bidder=self.alice, amount_cents=10_000
+        )
+        self._expire(auction)
+
+        response = self.client.get(self.url)
+
+        item = response.data["results"][0]
+        self.assertEqual(item["status"], Auction.Status.ENDED)
+        self.assertEqual(item["winner_pseudonym"], pseudo(self.alice))
+        self.assertEqual(item["bid_count"], 1)
+        self.assertTrue(Receipt.objects.filter(auction=auction).exists())
+
+    def test_detail_is_public_and_hides_identity(self):
+        auction = self._auction()
+
+        response = self.client.get(f"{self.url}{auction.pk}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], auction.pk)
+        self.assertEqual(
+            response.data["seller_pseudonym"], pseudo(self.seller)
+        )
+        self.assertNotIn("seller_id", response.data)
+        self.assertNotIn("winner_id", response.data)
+
+    def test_detail_returns_404_for_unknown_id(self):
+        response = self.client.get(f"{self.url}999999/")
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_detail_settles_an_expired_auction(self):
+        auction = self._auction(status=Auction.Status.SCHEDULED)
+        place_bid(
+            auction_id=auction.pk, bidder=self.alice, amount_cents=10_000
+        )
+        self._expire(auction)
+
+        response = self.client.get(f"{self.url}{auction.pk}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], Auction.Status.ENDED)
+        self.assertEqual(
+            response.data["winner_pseudonym"], pseudo(self.alice)
+        )
+        self.assertTrue(Receipt.objects.filter(auction=auction).exists())

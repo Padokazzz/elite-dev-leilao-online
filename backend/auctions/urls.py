@@ -5,7 +5,7 @@ from audit.views import AuctionAuditView
 from . import views
 
 urlpatterns = [
-    path("", views.AuctionCreateView.as_view(), name="auction-create"),
+    path("", views.AuctionListCreateView.as_view(), name="auction-list"),
     path("<int:auction_id>/bids/", include("bidding.urls")),
     path(
         "<int:auction_id>/audit/",
