@@ -1,12 +1,12 @@
 from django.db import DatabaseError, transaction
 
 from rest_framework import status
-from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
-from accounts.models import User
+from accounts.permissions import IsAuctioneer
 from .models import AuctionItem
 from .serializers import ArtworkImportSerializer, ArtworkSearchSerializer
 from .services import (
@@ -19,18 +19,6 @@ from .services import (
 
 class CatalogSearchThrottle(AnonRateThrottle):
     scope = "catalog_search"
-
-
-class AuctioneerPermission(BasePermission):
-    """
-    Permissão simples para endpoints exclusivos de leiloeiros.
-    """
-
-    def has_permission(self, request, view):
-        return (
-            request.user.is_authenticated
-            and request.user.role == User.Role.AUCTIONEER
-        )
 
 
 class ArtworkSearchView(APIView):
@@ -61,7 +49,7 @@ class ArtworkSearchView(APIView):
 
 
 class ArtworkImportView(APIView):
-    permission_classes = [IsAuthenticated, AuctioneerPermission]
+    permission_classes = [IsAuthenticated, IsAuctioneer]
 
     def post(self, request):
         serializer = ArtworkImportSerializer(data=request.data)

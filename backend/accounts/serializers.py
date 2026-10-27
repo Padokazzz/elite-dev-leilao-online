@@ -22,8 +22,8 @@ class RegisterSerializer(serializers.ModelSerializer):
         style={"input_type": "password"},
     )
     role = serializers.ChoiceField(
-        choices=User.Role.choices,
-        read_only=True,
+        choices=[User.Role.BIDDER, User.Role.AUCTIONEER],
+        default=User.Role.BIDDER,
     )
 
     class Meta:
@@ -56,10 +56,9 @@ class RegisterSerializer(serializers.ModelSerializer):
         return email
 
     def create(self, validated_data):
-        return User.objects.create_user(
-            **validated_data,
-            role=User.Role.BIDDER,
-        )
+        role = validated_data.pop("role", User.Role.BIDDER)
+
+        return User.objects.create_user(**validated_data, role=role)
 
 
 class LoginSerializer(serializers.Serializer):

@@ -1,5 +1,6 @@
 from django.db import transaction
 
+from .exceptions import HoldInconsistentError
 from .models import Wallet, WalletTransaction
 
 MIN_DEPOSIT_CENTS = 100              # R$ 1,00
@@ -19,6 +20,24 @@ def lock_wallets(user_ids) -> dict:
         )
         locked[user_id] = wallet
     return locked
+
+
+def release_hold(*, wallet, auction, bid, description: str) -> None:
+    if wallet.committed_cents < bid.amount_cents:
+        raise HoldInconsistentError(
+            "Saldo comprometido inconsistente ao liberar o lance anterior."
+        )
+
+    wallet.committed_cents -= bid.amount_cents
+    wallet.save(update_fields=["committed_cents", "updated_at"])
+
+    WalletTransaction.objects.create(
+        wallet=wallet,
+        auction=auction,
+        kind=WalletTransaction.Kind.BID_RELEASE,
+        committed_delta_cents=-bid.amount_cents,
+        description=description,
+    )
 
 
 def deposit(*, wallet_id: int, amount_cents: int) -> Wallet:

@@ -3,7 +3,7 @@ from django.utils import timezone
 
 from receipts.models import Receipt
 from wallets.models import WalletTransaction
-from wallets.services import lock_wallets
+from wallets.services import lock_wallets, release_hold
 
 from .models import Auction
 
@@ -89,5 +89,38 @@ def settle_if_expired(auction: Auction) -> Auction:
 
     if pending and settle_auction(auction.pk):
         auction.refresh_from_db()
+
+    return auction
+
+
+class CancelRejected(Exception):
+    pass
+
+
+def cancel_auction(*, auction_id: int, seller) -> Auction:
+    with transaction.atomic():
+        auction = Auction.objects.select_for_update().get(pk=auction_id)
+
+        if auction.seller_id != seller.pk:
+            raise CancelRejected("not_owner")
+        if auction.status not in (
+            Auction.Status.SCHEDULED,
+            Auction.Status.LIVE,
+        ):
+            raise CancelRejected("not_cancellable")
+
+        latest = auction.bids.order_by("-seq").first()
+
+        if latest is not None:
+            wallets = lock_wallets([latest.bidder_id])
+            release_hold(
+                wallet=wallets[latest.bidder_id],
+                auction=auction,
+                bid=latest,
+                description="Lance liberado pelo cancelamento do lote",
+            )
+
+        auction.status = Auction.Status.CANCELLED
+        auction.save(update_fields=["status", "updated_at"])
 
     return auction

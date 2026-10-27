@@ -8,8 +8,13 @@ from django.db import transaction
 from django.utils import timezone
 
 from auctions.models import Auction
+from wallets.exceptions import HoldInconsistentError
 from wallets.models import WalletTransaction
-from wallets.services import get_or_create_wallet, lock_wallets
+from wallets.services import (
+    get_or_create_wallet,
+    lock_wallets,
+    release_hold,
+)
 
 from .exceptions import BidRejected
 from .models import Bid
@@ -56,22 +61,15 @@ def _brl(cents: int) -> str:
 
 
 def _release_hold(*, wallet, auction, previous_bid) -> None:
-    if wallet.committed_cents < previous_bid.amount_cents:
-        raise BidRejected(
-            "inconsistent_state",
-            "Saldo comprometido inconsistente ao liberar o lance anterior.",
+    try:
+        release_hold(
+            wallet=wallet,
+            auction=auction,
+            bid=previous_bid,
+            description=f"Lance #{previous_bid.seq} superado",
         )
-
-    wallet.committed_cents -= previous_bid.amount_cents
-    wallet.save(update_fields=["committed_cents", "updated_at"])
-
-    WalletTransaction.objects.create(
-        wallet=wallet,
-        auction=auction,
-        kind=WalletTransaction.Kind.BID_RELEASE,
-        committed_delta_cents=-previous_bid.amount_cents,
-        description=f"Lance #{previous_bid.seq} superado",
-    )
+    except HoldInconsistentError as exc:
+        raise BidRejected("inconsistent_state", str(exc)) from exc
 
 
 def place_bid(*, auction_id: int, bidder: User, amount_cents: int) -> BidOutcome:
