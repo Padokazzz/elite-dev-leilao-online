@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 
 from auctions.models import Auction
 from auctions.pagination import AuctionPagination
-from auctions.services import settle_expired_auctions, settle_if_expired
+from auctions.services import settle_if_expired
 from receipts.models import Receipt
 
 from .events import publish_bid_placed
@@ -98,8 +98,6 @@ class MyBidsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        settle_expired_auctions()
-
         later_exists = Exists(
             Bid.objects.filter(
                 auction=OuterRef("auction_id"),

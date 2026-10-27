@@ -18,7 +18,6 @@ from .services import (
     RescheduleRejected,
     cancel_auction,
     reschedule_auction,
-    settle_expired_auctions,
     settle_if_expired,
 )
 
@@ -119,8 +118,6 @@ class AuctionListCreateView(APIView):
         return super().get_permissions()
 
     def get(self, request):
-        settle_expired_auctions()
-
         auctions = (
             Auction.objects.select_related("item", "seller", "winner")
             .annotate(bid_count=Count("bids"))
@@ -230,8 +227,6 @@ class AuctionMineView(APIView):
     permission_classes = [IsAuthenticated, IsAuctioneer]
 
     def get(self, request):
-        settle_expired_auctions()
-
         auctions = (
             Auction.objects.select_related("item", "seller", "winner")
             .annotate(bid_count=Count("bids"))
@@ -282,8 +277,6 @@ class AuctionWonView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        settle_expired_auctions()
-
         auctions = (
             Auction.objects.select_related("item", "seller", "winner")
             .annotate(bid_count=Count("bids"))

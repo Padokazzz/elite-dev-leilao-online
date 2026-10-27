@@ -757,7 +757,7 @@ class AuctionVitrineTests(APITestCase):
         self.assertEqual(response.data["count"], 60)
         self.assertEqual(len(response.data["results"]), 50)
 
-    def test_list_settles_expired_before_returning(self):
+    def test_list_leaves_settlement_to_the_worker(self):
         auction = self._auction(status=Auction.Status.SCHEDULED)
         place_bid(
             auction_id=auction.pk, bidder=self.alice, amount_cents=10_000
@@ -767,10 +767,21 @@ class AuctionVitrineTests(APITestCase):
         response = self.client.get(self.url)
 
         item = response.data["results"][0]
+        self.assertEqual(item["status"], Auction.Status.LIVE)
+        self.assertIsNone(item["winner_pseudonym"])
+        self.assertEqual(item["bid_count"], 1)
+        self.assertFalse(Receipt.objects.filter(auction=auction).exists())
+        self.assertEqual(
+            Wallet.objects.get(user=self.alice).committed_cents, 10_000
+        )
+
+        settle_auction(auction.pk)
+
+        response = self.client.get(self.url)
+
+        item = response.data["results"][0]
         self.assertEqual(item["status"], Auction.Status.ENDED)
         self.assertEqual(item["winner_pseudonym"], pseudo(self.alice))
-        self.assertEqual(item["bid_count"], 1)
-        self.assertTrue(Receipt.objects.filter(auction=auction).exists())
 
     def test_detail_is_public_and_hides_identity(self):
         auction = self._auction()
