@@ -5,3 +5,7 @@ class LedgerImmutableError(Exception):
     Corrigir um registro errado significa criar um NOVO registro que o
     compense (ex.: um estorno) — nunca sobrescrever o histórico.
     """
+
+
+class HoldInconsistentError(Exception):
+    pass

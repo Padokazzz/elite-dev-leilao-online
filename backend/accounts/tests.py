@@ -80,14 +80,21 @@ class RegisterSerializerTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("password", serializer.errors)
 
-    def test_public_registration_cannot_assign_auctioneer_role(self):
+    def test_public_registration_can_choose_the_auctioneer_role(self):
         data = {**self.valid_data, "role": User.Role.AUCTIONEER}
         serializer = RegisterSerializer(data=data)
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
         user = serializer.save()
 
-        self.assertEqual(user.role, User.Role.BIDDER)
+        self.assertEqual(user.role, User.Role.AUCTIONEER)
+
+    def test_public_registration_rejects_unknown_role(self):
+        data = {**self.valid_data, "role": "superadmin"}
+        serializer = RegisterSerializer(data=data)
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("role", serializer.errors)
 
     def test_password_is_not_returned_in_serialized_data(self):
         serializer = RegisterSerializer(data=self.valid_data)
@@ -167,14 +174,22 @@ class RegisterEndpointTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_public_registration_cannot_assign_auctioneer_role(self):
+    def test_public_registration_can_choose_the_auctioneer_role(self):
         data = {**self.valid_data, "role": User.Role.AUCTIONEER}
 
         response = self.client.post(self.url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         user = User.objects.get(email="new_bidder@example.com")
-        self.assertEqual(user.role, User.Role.BIDDER)
+        self.assertEqual(user.role, User.Role.AUCTIONEER)
+
+    def test_public_registration_rejects_unknown_role(self):
+        data = {**self.valid_data, "role": "superadmin"}
+
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("role", response.data)
 
 
 class LoginEndpointTests(APITestCase):
