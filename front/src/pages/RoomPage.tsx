@@ -142,11 +142,21 @@ export default function RoomPage() {
     };
   }, [user, snapshot, topSeq, id]);
 
-  const status: AuctionStatus = live.cancelled
+  const baseStatus: AuctionStatus = live.cancelled
     ? "cancelled"
     : live.closed
       ? "ended"
       : snapshot?.status ?? detail?.status ?? "scheduled";
+
+  const untilStart = useCountdown(
+    detail?.starts_at ?? null,
+    baseStatus === "scheduled",
+  );
+
+  const status: AuctionStatus =
+    baseStatus === "scheduled" && untilStart !== null && untilStart <= 0
+      ? "live"
+      : baseStatus;
 
   const newestWs = live.bidEvents[live.bidEvents.length - 1] ?? null;
   const topSource =
@@ -177,10 +187,6 @@ export default function RoomPage() {
       : (snapshot?.you_lead ?? false);
 
   const remaining = useCountdown(endsAt, status === "live");
-  const untilStart = useCountdown(
-    detail?.starts_at ?? null,
-    status === "scheduled",
-  );
 
   const extendedNote = Boolean(newestWs?.extended) && status === "live";
 
@@ -359,7 +365,7 @@ export default function RoomPage() {
       </div>
 
       {live.closed && (
-        <div className="banner banner-win card">
+        <div className="banner banner-win card" role="status">
           {live.closed.you_won ? (
             <p>
               🏆 <strong>Você arrematou!</strong>
@@ -389,7 +395,7 @@ export default function RoomPage() {
       )}
 
       {!live.closed && status === "ended" && detail.winner_pseudonym && (
-        <div className="banner card">
+        <div className="banner card" role="status">
           <p>
             Lote encerrado — vencedor{" "}
             <strong>{detail.winner_pseudonym}</strong>
@@ -399,7 +405,7 @@ export default function RoomPage() {
       )}
 
       {status === "cancelled" && (
-        <div className="banner banner-cancelled card">
+        <div className="banner banner-cancelled card" role="status">
           <p>Este lote foi cancelado. Os lances são estornados.</p>
         </div>
       )}

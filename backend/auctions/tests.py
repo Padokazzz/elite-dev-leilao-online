@@ -1090,3 +1090,52 @@ class AuctionWonTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 0)
+
+
+class StartPromotionTests(APITestCase):
+    def setUp(self):
+        self.seller = make_user(
+            username="start_seller",
+            email="start_seller@example.com",
+            role=User.Role.AUCTIONEER,
+        )
+
+    def test_sweep_promotes_a_started_scheduled_auction(self):
+        auction = make_auction(self.seller, status=Auction.Status.SCHEDULED)
+
+        settled = settle_expired_auctions()
+
+        auction.refresh_from_db()
+        self.assertEqual(auction.status, Auction.Status.LIVE)
+        self.assertEqual(settled, 0)
+
+    def test_sweep_stays_quiet_when_run_twice(self):
+        auction = make_auction(self.seller, status=Auction.Status.SCHEDULED)
+
+        settle_expired_auctions()
+        settled = settle_expired_auctions()
+
+        auction.refresh_from_db()
+        self.assertEqual(auction.status, Auction.Status.LIVE)
+        self.assertEqual(settled, 0)
+
+    def test_sweep_leaves_future_live_ended_and_cancelled_lots_alone(self):
+        future = make_auction(
+            self.seller,
+            status=Auction.Status.SCHEDULED,
+            starts_in=timedelta(hours=2),
+            ends_in=timedelta(hours=3),
+        )
+        live = make_auction(self.seller)
+        ended = make_auction(self.seller, status=Auction.Status.ENDED)
+        cancelled = make_auction(self.seller, status=Auction.Status.CANCELLED)
+
+        settle_expired_auctions()
+
+        for auction in (future, live, ended, cancelled):
+            auction.refresh_from_db()
+
+        self.assertEqual(future.status, Auction.Status.SCHEDULED)
+        self.assertEqual(live.status, Auction.Status.LIVE)
+        self.assertEqual(ended.status, Auction.Status.ENDED)
+        self.assertEqual(cancelled.status, Auction.Status.CANCELLED)

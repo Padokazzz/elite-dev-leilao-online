@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type {
   TransactionsResponse,
@@ -18,6 +18,7 @@ import {
 
 export default function WalletPage() {
   const { user, ready } = useAuth();
+  const location = useLocation();
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [rows, setRows] = useState<WalletTransactionRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,7 +115,7 @@ export default function WalletPage() {
         <h1>Carteira</h1>
         <div className="empty-state">
           <p>Entre para ver o seu saldo e o extrato de movimentações.</p>
-          <Link className="btn" to="/entrar">
+          <Link className="btn" to="/entrar" state={{ from: location }}>
             Entrar
           </Link>
         </div>

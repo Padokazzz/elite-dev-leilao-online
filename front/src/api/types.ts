@@ -37,6 +37,27 @@ export type Paginated<T> = {
   results: T[];
 };
 
+export type ArtworkSearchResult = {
+  id: string;
+  title: string;
+  description: string;
+  image_url: string;
+};
+
+export type ImportedArtwork = {
+  id: number;
+  title: string;
+  created: boolean;
+};
+
+export type MineAuction = Auction & {
+  received_cents: number | null;
+};
+
+export type MineResponse = Paginated<MineAuction> & {
+  summary: { total_received_cents: number };
+};
+
 export type BidRow = {
   seq: number;
   amount_cents: number;
@@ -151,6 +172,26 @@ export type Receipt = {
   settled_at: string;
   winner: string;
   seller: string;
+};
+
+export type AuditRow = {
+  seq: number;
+  amount_cents: number;
+  accepted_at: string;
+  bidder: string;
+};
+
+export type AuditTamper = {
+  seq: number;
+  reason: "sequence_gap" | "prev_hash_mismatch" | "hash_mismatch";
+  expected_seq?: number;
+};
+
+export type AuditReport = {
+  auction_id: number;
+  intact: boolean;
+  chain: AuditRow[];
+  tampered: AuditTamper | null;
 };
 
 export type ApiErrorBody = {

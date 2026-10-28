@@ -125,6 +125,12 @@ export default function ReceiptPage() {
           <button type="button" className="btn btn-ghost" onClick={() => void copyLink()}>
             {copied ? "Link copiado ✓" : "Copiar link"}
           </button>
+          <Link
+            className="btn btn-ghost"
+            to={`/auditoria?lote=${receipt.auction_id}`}
+          >
+            Verificar auditoria do lote
+          </Link>
         </div>
       </div>
     </section>

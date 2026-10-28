@@ -101,7 +101,18 @@ def settle_auction(auction_id: int) -> bool:
         return True
 
 
+def start_started_auctions() -> int:
+    now = timezone.now()
+    return Auction.objects.filter(
+        status=Auction.Status.SCHEDULED,
+        starts_at__lte=now,
+        ends_at__gt=now,
+    ).update(status=Auction.Status.LIVE, updated_at=now)
+
+
 def settle_expired_auctions() -> int:
+    start_started_auctions()
+
     expired = list(
         Auction.objects.filter(
             status__in=[Auction.Status.LIVE, Auction.Status.SCHEDULED],
