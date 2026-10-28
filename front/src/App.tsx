@@ -1,4 +1,5 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { AuthProvider } from "./auth/AuthContext";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import MyBidsPage from "./pages/MyBidsPage";
@@ -10,16 +11,18 @@ import WalletPage from "./pages/WalletPage";
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<VitrinePage />} />
-          <Route path="/entrar" element={<LoginPage />} />
-          <Route path="/registrar" element={<RegisterPage />} />
-          <Route path="/carteira" element={<WalletPage />} />
-          <Route path="/meus-lances" element={<MyBidsPage />} />
-          <Route path="/lotes/:auctionId" element={<RoomPage />} />
-        </Route>
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<VitrinePage />} />
+            <Route path="/entrar" element={<LoginPage />} />
+            <Route path="/registrar" element={<RegisterPage />} />
+            <Route path="/carteira" element={<WalletPage />} />
+            <Route path="/meus-lances" element={<MyBidsPage />} />
+            <Route path="/lotes/:auctionId" element={<RoomPage />} />
+          </Route>
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }
