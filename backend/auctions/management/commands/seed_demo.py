@@ -21,21 +21,49 @@ FALLBACK_ITEMS = (
         "title": "Retrato de uma dama desconhecida",
         "description": "Óleo sobre tela, escola flamenga, séc. XVII.",
         "image_url": "",
+        "attributes": {
+            "artist": "Escola flamenga (autor desconhecido)",
+            "date": "séc. XVII",
+            "medium": "Óleo sobre tela",
+            "dimensions": "62 × 48 cm",
+            "is_public_domain": True,
+        },
     },
     {
         "title": "Natureza-morta com frutas",
         "description": "Pintura flamenga, séc. XVII.",
         "image_url": "",
+        "attributes": {
+            "artist": "Escola flamenga (autor desconhecido)",
+            "date": "séc. XVII",
+            "medium": "Óleo sobre painel de madeira",
+            "dimensions": "54 × 71 cm",
+            "is_public_domain": True,
+        },
     },
     {
         "title": "Marina ao pôr do sol",
         "description": "Óleo sobre tela, tradição holandesa.",
         "image_url": "",
+        "attributes": {
+            "artist": "Escola holandesa (autor desconhecido)",
+            "date": "séc. XVII",
+            "medium": "Óleo sobre tela",
+            "dimensions": "48 × 66 cm",
+            "is_public_domain": True,
+        },
     },
     {
         "title": "Estudo de figuras",
         "description": "Desenho a nanquim sobre papel.",
         "image_url": "",
+        "attributes": {
+            "artist": "Autor desconhecido",
+            "date": "séc. XIX",
+            "medium": "Nanquim sobre papel",
+            "dimensions": "31 × 24 cm",
+            "is_public_domain": True,
+        },
     },
 )
 
@@ -147,13 +175,33 @@ class Command(BaseCommand):
                     "title": artwork["title"],
                     "description": artwork["description"],
                     "image_url": artwork["image_url"],
+                    "attributes": artwork["attributes"],
                 }
 
-            item, _ = AuctionItem.objects.get_or_create(
+            item, created = AuctionItem.objects.get_or_create(
                 source="demo",
                 external_id=f"demo-{index}",
                 defaults=content,
             )
+            if not created:
+                # Retrofita dados de seeds antigos: ficha vazia ganha
+                # attributes; descrição com HTML cru (rodadas antigas
+                # gravavam o retorno do museu sem normalizar) é trocada
+                # pela versão em texto puro.
+                updates = {}
+                if content.get("attributes") and not item.attributes:
+                    updates["attributes"] = content["attributes"]
+                stored_description = item.description or ""
+                if (
+                    "<" in stored_description
+                    and ">" in stored_description
+                    and content.get("description")
+                ):
+                    updates["description"] = content["description"]
+                if updates:
+                    for field, value in updates.items():
+                        setattr(item, field, value)
+                    item.save(update_fields=list(updates))
             items.append(item)
 
         return items
