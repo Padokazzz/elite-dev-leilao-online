@@ -68,5 +68,22 @@ services:
       redis:
         condition: service_healthy
 
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"
+    volumes:
+      - ./front:/app
+      - front_node_modules:/app/node_modules
+    environment:
+      # O browser fala com a API no host (porta 8000 publicada).
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_started
+
 volumes:
   pgdata:
+  front_node_modules:

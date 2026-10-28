@@ -108,6 +108,10 @@ class ArtworkImportView(APIView):
 
 class ArtworkImageView(APIView):
     permission_classes = [AllowAny]
+    # Proxy de imagem com cache de 24h: conta de thumbnails de página
+    # inteira esgotaria o limite global do anon em umas duas rolagens.
+    # O upstream só é contatado em cache frio.
+    throttle_classes = []
 
     def get(self, request, item_id: int):
         item = (
@@ -155,6 +159,8 @@ class ArtworkPreviewImageView(APIView):
     """
 
     permission_classes = [AllowAny]
+    # Mesma razão de ArtworkImageView: cache local absorve a leitura.
+    throttle_classes = []
 
     def get(self, request, image_id: str):
         if not _is_safe_image_id(image_id):

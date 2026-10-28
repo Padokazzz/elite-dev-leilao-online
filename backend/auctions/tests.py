@@ -3,7 +3,9 @@ from io import StringIO
 from threading import Barrier, Thread
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.management import call_command
 from django.db import OperationalError, connections
 from django.db.models import Sum
@@ -16,6 +18,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from audit.services import pseudo
+from bidding.models import Bid
 from bidding.services import place_bid
 from bidding.tests import fund, make_auction, make_user
 from catalog.models import AuctionItem
@@ -1179,3 +1182,85 @@ class StartPromotionTests(APITestCase):
         self.assertEqual(live.status, Auction.Status.LIVE)
         self.assertEqual(ended.status, Auction.Status.ENDED)
         self.assertEqual(cancelled.status, Auction.Status.CANCELLED)
+
+
+class GlobalThrottleTests(APITestCase):
+    """Limite global DRF (anon/usuário) — desligado na suíte, ativo em prod.
+
+    O DRF resolve `APIView.throttle_classes` na importação (a partir de
+    DEFAULT_THROTTLE_CLASSES). Na suíte o settings zera a lista (`test`
+    no argv) para a contagem cumulativa não esbarrar no teto; em produção
+    o boot injeta [AnonRateThrottle, UserRateThrottle]. Aqui religamos o
+    mesmo par na view e provamos que o teto por scope corta de verdade.
+    """
+
+    def test_anonymous_vitrine_is_rate_limited_by_the_global_ceiling(self):
+        from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
+
+        from .views import AuctionListCreateView
+
+        rates = settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]
+        self.assertIn("anon", rates)
+        self.assertIn("user", rates)
+
+        # O DRF amarra classes E rates na importação (APIView.throttle_classes
+        # e SimpleRateThrottle.THROTTLE_RATES); em produção o boot injeta os
+        # dois. Aqui religamos o par e apertamos o teto para o teste caber.
+        tight = {**rates, "anon": "2/min"}
+        cache.clear()
+        try:
+            with patch.object(
+                AuctionListCreateView,
+                "throttle_classes",
+                [AnonRateThrottle, UserRateThrottle],
+            ), patch.object(
+                AnonRateThrottle, "THROTTLE_RATES", tight
+            ), patch.object(UserRateThrottle, "THROTTLE_RATES", tight):
+                for _ in range(2):
+                    response = self.client.get("/api/auctions/")
+                    self.assertEqual(response.status_code, 200)
+
+                blocked = self.client.get("/api/auctions/")
+                self.assertEqual(blocked.status_code, 429)
+        finally:
+            cache.clear()
+
+    def test_image_proxy_is_exempt_from_the_global_limit(self):
+        from catalog.views import ArtworkImageView, ArtworkPreviewImageView
+
+        self.assertEqual(ArtworkImageView.throttle_classes, [])
+        self.assertEqual(ArtworkPreviewImageView.throttle_classes, [])
+
+
+class SeedDemoIdempotencyTests(APITestCase):
+    """PLANO §5: `seed_demo` idempotente — reexecutar não duplica nada."""
+
+    def _counts(self):
+        return {
+            "users": User.objects.filter(
+                email__endswith="@demo.com"
+            ).count(),
+            "items": AuctionItem.objects.filter(source="demo").count(),
+            "auctions": Auction.objects.count(),
+            "bids": Bid.objects.count(),
+            "wallets": Wallet.objects.count(),
+            "transactions": WalletTransaction.objects.count(),
+            "receipts": Receipt.objects.count(),
+        }
+
+    @patch(
+        "auctions.management.commands.seed_demo.search_artworks",
+        return_value=None,  # caminho offline: fallbacks embutidos
+    )
+    def test_second_run_duplicates_nothing(self, _mocked_search):
+        call_command("seed_demo", stdout=StringIO())
+        first = self._counts()
+
+        call_command("seed_demo", stdout=StringIO())
+        second = self._counts()
+
+        self.assertEqual(first, second)
+        self.assertGreater(first["auctions"], 0)
+        self.assertGreater(first["items"], 0)
+        self.assertGreaterEqual(first["users"], 3)
+        self.assertGreater(first["bids"], 0)
