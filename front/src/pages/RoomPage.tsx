@@ -359,7 +359,7 @@ export default function RoomPage() {
       </div>
 
       {live.closed && (
-        <div className="banner banner-win card">
+        <div className="banner banner-win card" role="status">
           {live.closed.you_won ? (
             <p>
               🏆 <strong>Você arrematou!</strong>
@@ -389,7 +389,7 @@ export default function RoomPage() {
       )}
 
       {!live.closed && status === "ended" && detail.winner_pseudonym && (
-        <div className="banner card">
+        <div className="banner card" role="status">
           <p>
             Lote encerrado — vencedor{" "}
             <strong>{detail.winner_pseudonym}</strong>
@@ -399,7 +399,7 @@ export default function RoomPage() {
       )}
 
       {status === "cancelled" && (
-        <div className="banner banner-cancelled card">
+        <div className="banner banner-cancelled card" role="status">
           <p>Este lote foi cancelado. Os lances são estornados.</p>
         </div>
       )}

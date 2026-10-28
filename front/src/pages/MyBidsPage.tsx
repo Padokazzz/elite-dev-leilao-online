@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type {
   Auction,
@@ -25,6 +25,7 @@ type Tab = "bids" | "won";
 
 export default function MyBidsPage() {
   const { user, ready } = useAuth();
+  const location = useLocation();
   const [tab, setTab] = useState<Tab>("bids");
   const [page, setPage] = useState(1);
   const [reload, setReload] = useState(0);
@@ -110,7 +111,7 @@ export default function MyBidsPage() {
         <h1>Meus lances</h1>
         <div className="empty-state">
           <p>Entre para acompanhar os seus lances e arremates.</p>
-          <Link className="btn" to="/entrar">
+          <Link className="btn" to="/entrar" state={{ from: location }}>
             Entrar
           </Link>
         </div>

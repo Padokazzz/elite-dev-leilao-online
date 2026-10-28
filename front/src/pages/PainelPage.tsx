@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type {
   ArtworkSearchResult,
@@ -51,6 +51,7 @@ function resultLabel(auction: MineAuction): string {
 
 export default function PainelPage() {
   const { user, ready } = useAuth();
+  const location = useLocation();
 
   const [mine, setMine] = useState<MineResponse | null>(null);
   const [page, setPage] = useState(1);
@@ -275,7 +276,7 @@ export default function PainelPage() {
         <h1>Painel do leiloeiro</h1>
         <div className="empty-state">
           <p>Entre como leiloeiro para criar e gerenciar lotes.</p>
-          <Link className="btn" to="/entrar">
+          <Link className="btn" to="/entrar" state={{ from: location }}>
             Entrar
           </Link>
         </div>

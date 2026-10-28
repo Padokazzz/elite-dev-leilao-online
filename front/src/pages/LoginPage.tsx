@@ -1,12 +1,13 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +20,10 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-      navigate("/");
+      const from =
+        (location.state as { from?: { pathname: string } } | null)?.from
+          ?.pathname ?? "/";
+      navigate(from, { replace: true });
     } catch (exc) {
       setError(
         exc instanceof ApiError
