@@ -6,10 +6,23 @@ export function formatCents(cents: number): string {
 }
 
 export function parseBrlToCents(text: string): number | null {
-  const normalized = text.trim().replace(/\./g, "").replace(",", ".");
-  if (!normalized) {
+  const raw = text.trim();
+  if (!raw || !/^[0-9.,]+$/.test(raw)) {
     return null;
   }
+
+  let normalized: string;
+  if (raw.includes(",")) {
+    normalized = raw.replace(/\./g, "").replace(",", ".");
+  } else if (raw.includes(".")) {
+    const parts = raw.split(".");
+    const lastSegment = parts[parts.length - 1];
+    const isDecimal = parts.length === 2 && lastSegment.length <= 2;
+    normalized = isDecimal ? raw : raw.replace(/\./g, "");
+  } else {
+    normalized = raw;
+  }
+
   const value = Number(normalized);
   if (Number.isNaN(value) || value < 0) {
     return null;
