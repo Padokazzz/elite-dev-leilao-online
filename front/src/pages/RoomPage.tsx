@@ -115,6 +115,7 @@ export default function RoomPage() {
           seq: event.bid.seq,
           amount_cents: event.bid.amount_cents,
           accepted_at: event.bid.accepted_at,
+          bidder_pseudonym: event.bid.bidder_pseudonym,
           is_you: event.is_you,
         });
       }
@@ -240,6 +241,7 @@ export default function RoomPage() {
                 seq: response.bid.seq,
                 amount_cents: response.bid.amount_cents,
                 accepted_at: response.bid.accepted_at,
+                bidder_pseudonym: response.bid.bidder_pseudonym,
                 is_you: true,
               },
               ...prev,
@@ -429,10 +431,12 @@ export default function RoomPage() {
                 </>
               )}
             </p>
+          ) : live.closed.winner_pseudonym === null ? (
+            <p>Lote encerrado sem lances.</p>
           ) : (
             <p>
               Lote encerrado — vencedor{" "}
-              <strong>{live.closed.winner_pseudonym ?? "—"}</strong>
+              <strong>{live.closed.winner_pseudonym}</strong>
               {live.closed.amount_cents !== null &&
                 ` com ${formatCents(live.closed.amount_cents)}`}
               .
@@ -448,6 +452,12 @@ export default function RoomPage() {
             <strong>{detail.winner_pseudonym}</strong>
             {lastBidCents !== null && ` com ${formatCents(lastBidCents)}`}.
           </p>
+        </div>
+      )}
+
+      {!live.closed && status === "ended" && !detail.winner_pseudonym && (
+        <div className="banner card" role="status">
+          <p>Lote encerrado sem lances.</p>
         </div>
       )}
 
@@ -537,6 +547,7 @@ export default function RoomPage() {
                   className={bid.is_you ? "bid-row you" : "bid-row"}
                 >
                   <span className="muted">#{bid.seq}</span>
+                  <span className="bid-by">{bid.bidder_pseudonym}</span>
                   <strong>{formatCents(bid.amount_cents)}</strong>
                   <span className="muted">
                     {formatTime(bid.accepted_at)}

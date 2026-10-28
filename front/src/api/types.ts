@@ -79,6 +79,8 @@ export type BidRow = {
   amount_cents: number;
   accepted_at: string;
   is_you: boolean;
+  /** Pseudônimo público do licitante (HMAC) — nunca identidade real. */
+  bidder_pseudonym: string;
 };
 
 export type BidsResponse = {
@@ -86,7 +88,12 @@ export type BidsResponse = {
 };
 
 export type PlaceBidResponse = {
-  bid: { seq: number; amount_cents: number; accepted_at: string };
+  bid: {
+    seq: number;
+    amount_cents: number;
+    accepted_at: string;
+    bidder_pseudonym: string;
+  };
   extended: boolean;
   ends_at: string;
   next_minimum_cents: number;
@@ -153,7 +160,12 @@ export type RoomSnapshot = {
 
 export type BidPlacedEvent = {
   type: "bid.placed";
-  bid: { seq: number; amount_cents: number; accepted_at: string };
+  bid: {
+    seq: number;
+    amount_cents: number;
+    accepted_at: string;
+    bidder_pseudonym: string;
+  };
   extended: boolean;
   ends_at: string;
   next_minimum_cents: number;

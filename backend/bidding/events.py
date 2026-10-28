@@ -10,7 +10,13 @@ def _publish(auction_id: int, payload: dict) -> None:
     )
 
 
-def publish_bid_placed(*, auction_id: int, bidder_id: int, outcome) -> None:
+def publish_bid_placed(
+    *,
+    auction_id: int,
+    bidder_id: int,
+    bidder_pseudonym: str,
+    outcome,
+) -> None:
     _publish(
         auction_id,
         {
@@ -20,6 +26,7 @@ def publish_bid_placed(*, auction_id: int, bidder_id: int, outcome) -> None:
                 "seq": outcome.bid.seq,
                 "amount_cents": outcome.bid.amount_cents,
                 "accepted_at": outcome.bid.accepted_at.isoformat(),
+                "bidder_pseudonym": bidder_pseudonym,
             },
             "extended": outcome.extended,
             "ends_at": outcome.ends_at.isoformat(),
