@@ -279,3 +279,52 @@ class ArtworkServiceTests(APITestCase):
 
         with self.assertRaises(ArtworkAPIError):
             _request_json("https://api.artic.edu/api/v1/artworks/123")
+
+
+class ArtworkImageViewTests(APITestCase):
+    def _item(self, image_url):
+        return AuctionItem.objects.create(
+            source="artic",
+            external_id="img-test",
+            title="Obra",
+            image_url=image_url,
+        )
+
+    @patch("catalog.views.fetch_artwork_image")
+    def test_serves_stored_image(self, mock_fetch):
+        mock_fetch.return_value = ("image/jpeg", b"\xff\xd8\xff\xe0fake")
+        item = self._item(
+            "https://www.artic.edu/iiif/2/abc/full/843,/0/default.jpg"
+        )
+
+        response = self.client.get(f"/api/catalog/image/{item.pk}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/jpeg")
+        self.assertEqual(response.content, b"\xff\xd8\xff\xe0fake")
+        self.assertEqual(response["Cache-Control"], "public, max-age=86400")
+
+    @patch("catalog.views.fetch_artwork_image")
+    def test_returns_404_when_item_has_no_image(self, mock_fetch):
+        item = self._item("")
+
+        response = self.client.get(f"/api/catalog/image/{item.pk}/")
+
+        self.assertEqual(response.status_code, 404)
+        mock_fetch.assert_not_called()
+
+    def test_returns_404_for_unknown_item(self):
+        response = self.client.get("/api/catalog/image/999999/")
+
+        self.assertEqual(response.status_code, 404)
+
+    @patch("catalog.views.fetch_artwork_image")
+    def test_returns_502_when_upstream_fails(self, mock_fetch):
+        mock_fetch.side_effect = ArtworkAPIError("rede")
+        item = self._item(
+            "https://www.artic.edu/iiif/2/abc/full/843,/0/default.jpg"
+        )
+
+        response = self.client.get(f"/api/catalog/image/{item.pk}/")
+
+        self.assertEqual(response.status_code, 502)
