@@ -43,6 +43,10 @@ export type BidRow = {
   is_you: boolean;
 };
 
+export type BidsResponse = {
+  results: BidRow[];
+};
+
 export type PlaceBidResponse = {
   bid: { seq: number; amount_cents: number; accepted_at: string };
   extended: boolean;
