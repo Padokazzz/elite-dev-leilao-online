@@ -1,4 +1,5 @@
 from django.db import DatabaseError, transaction
+from django.http import HttpResponse
 
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -12,6 +13,7 @@ from .serializers import ArtworkImportSerializer, ArtworkSearchSerializer
 from .services import (
     SOURCE_NAME,
     ArtworkAPIError,
+    fetch_artwork_image,
     get_artwork,
     search_artworks,
 )
@@ -101,3 +103,31 @@ class ArtworkImportView(APIView):
             },
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+
+class ArtworkImageView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, item_id: int):
+        item = (
+            AuctionItem.objects.filter(pk=item_id)
+            .exclude(image_url="")
+            .first()
+        )
+        if item is None:
+            return Response(
+                {"detail": "Não encontrado."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            content_type, data = fetch_artwork_image(item.image_url)
+        except ArtworkAPIError:
+            return Response(
+                {"detail": "Imagem indisponível no catálogo externo."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        response = HttpResponse(data, content_type=content_type)
+        response["Cache-Control"] = "public, max-age=86400"
+        return response

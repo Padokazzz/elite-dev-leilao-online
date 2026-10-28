@@ -808,6 +808,26 @@ class AuctionVitrineTests(APITestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_payload_carries_item_image(self):
+        auction = self._auction()
+        auction.item.image_url = "https://example.com/artwork.jpg"
+        auction.item.save(update_fields=["image_url"])
+        blank = self._auction(title="Outra obra")
+
+        listing = self.client.get(self.url)
+        detail = self.client.get(f"{self.url}{auction.pk}/")
+        rows = {row["id"]: row for row in listing.data["results"]}
+
+        self.assertEqual(
+            rows[auction.pk]["item_image_url"],
+            "https://example.com/artwork.jpg",
+        )
+        self.assertIsNone(rows[blank.pk]["item_image_url"])
+        self.assertEqual(
+            detail.data["item_image_url"],
+            "https://example.com/artwork.jpg",
+        )
+
     def test_detail_settles_an_expired_auction(self):
         auction = self._auction(status=Auction.Status.SCHEDULED)
         place_bid(

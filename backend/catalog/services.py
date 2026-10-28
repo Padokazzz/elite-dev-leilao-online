@@ -101,6 +101,35 @@ def _normalize_artwork(artwork):
     }
 
 
+def fetch_artwork_image(url):
+    request = Request(
+        url,
+        headers={
+            "Accept": "image/*",
+            "User-Agent": "leilao-online/1.0",
+            "AIC-User-Agent": "leilao-online/1.0",
+        },
+    )
+
+    try:
+        with urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+            content_type = response.headers.get(
+                "Content-Type", "application/octet-stream"
+            )
+            body = response.read(MAX_RESPONSE_BYTES + 1)
+
+            if len(body) > MAX_RESPONSE_BYTES:
+                raise ArtworkAPIError(
+                    "A imagem do catálogo externo excedeu o tamanho permitido."
+                )
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+        raise ArtworkAPIError(
+            "Não foi possível baixar a imagem do catálogo externo."
+        ) from exc
+
+    return content_type, body
+
+
 def search_artworks(query, limit=10):
     query = query.strip()
 
