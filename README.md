@@ -11,11 +11,11 @@ guia de setup, execução, decisões técnicas e entrega.
 
 | Área | Estado |
 | :--- | :--- |
-| Backend (Django + DRF + Channels) | ✅ Completo — 195 testes |
+| Backend (Django + DRF + Channels) | ✅ Completo — 206 testes |
 | Front-end — telas core | ✅ Vitrine, sala ao vivo, carteira, meus lances, comprovantes, auth, dark mode |
 | Front-end — painel do leiloeiro | ✅ Busca/importação de catálogo, criar, programar, cancelar, resultado por lote e total recebido |
 | Front-end — auditoria pública | ✅ Verificação de cadeia por lote, com deep link e cross-link do comprovante |
-| Infraestrutura | ✅ Docker Compose (Postgres, Redis, API, worker) · ⬜ CI, throttles globais, whitenoise |
+| Infraestrutura | ✅ Docker Compose (Postgres, Redis, API, worker, front) · CI (GitHub Actions) · throttles globais · whitenoise |
 | Deploy | ⬜ Previsto: Render + Neon + Vercel (§4 do PLANO) |
 
 ## Escopo implementado
@@ -33,8 +33,9 @@ superado, o comprometimento é liberado; cancelamento estorna tudo.
 
 **Tempo real** — WebSocket `/ws/auctions/<id>/` com token na query e
 origem validada no handshake (recusa antes de qualquer evento);
-snapshot inicial com `you_lead`; eventos `bid.placed`, `auction.closed`
-e `auction.cancelled`; anti-snipe: lance no último minuto estende o fim
+snapshot inicial com `you_lead`; eventos `bid.placed` (com o pseudônimo
+do licitante, nunca a identidade), `auction.closed` e
+`auction.cancelled`; anti-snipe: lance no último minuto estende o fim
 em 2 minutos; reconexão com backoff no front.
 
 **Encerramento e liquidação** — liquidação idempotente (rodar duas
@@ -55,9 +56,13 @@ preço, ordenação, filtro de status e paginação.
 **Front-end (React 19 + Vite + TypeScript, sem UI kit)** — rotas `/`,
 `/entrar`, `/registrar`, `/carteira`, `/meus-lances`,
 `/comprovantes/:uuid`, `/lotes/:id`, `/painel` (leiloeiro) e
-`/auditoria` (pública); dark mode com variáveis CSS e script
+`/auditoria` (pública); sala com ficha da obra (atributos do catálogo
+em `item_attributes`), histórico por pseudônimo e banner final para
+lote que terminou sem lances; carteira com extrato derivado do ledger
+(sem linha de variação zero); dark mode com variáveis CSS e script
 anti-flash; estados de loading/vazio/erro em todas as telas; login
-volta para a página de origem.
+volta para a página de origem; no mobile: menu hambúrguer, bottom
+sheet de ações e prévias dos lotes.
 
 ## Como executar
 
@@ -69,16 +74,13 @@ para rodar por fora.
 ```bash
 docker compose up --build
 # Postgres (localhost:5434), API em http://localhost:8000,
-# migrations e worker sobem sozinhos.
+# front em http://localhost:5173 — migrations e worker sobem sozinhos.
 
 docker compose exec backend python manage.py seed_demo
 ```
 
-O front não tem serviço no compose ainda — rode por fora:
-
-```bash
-cd front && npm install && cp .env.example .env && npm run dev
-```
+Prefere rodar o front por fora? Suba só `db`, `redis`, `migrate`,
+`backend` e `worker` e use o modo manual abaixo.
 
 ### Manual — backend
 
@@ -87,7 +89,7 @@ cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-cp ../.env.example .env   # o settings.py lê somente backend/.env
+cp .env.example .env    # o settings.py lê somente backend/.env
 python manage.py migrate
 python manage.py seed_demo
 
@@ -127,7 +129,7 @@ local. Reexecutar reposiciona os horários dos lotes de demonstração.
 ## Testes
 
 ```bash
-# backend — 195 testes
+# backend — 206 testes
 cd backend && ./.venv/bin/python manage.py test --noinput
 
 # front — vitest + typecheck + lint
@@ -200,8 +202,10 @@ nele é implementado e mapeado acima; o que não está, não entra.
 
 ### Orquestração e validação de testes
 
-- Suíte de 195 testes no backend rodando a cada etapa, antes de
-  qualquer commit;
+- Suíte de 206 testes no backend rodando a cada etapa, antes de
+  qualquer commit; CI (GitHub Actions) reproduz a mesma suíte no
+  push/PR — backend contra Postgres real e front com build + lint +
+  testes;
 - Sabotagem obrigatória: quebrar a função de propósito e confirmar o
   vermelho antes de aceitar o verde;
 - No front: `vitest` (dinheiro em centavos, parser de BRL),
@@ -216,9 +220,28 @@ decide escopo e aprova commits e pushes.
 ## Estrutura do repositório
 
 ```
-backend/            Django + DRF + Channels (API, domínio, worker, testes)
-front/              React + Vite + TypeScript (SPA)
-docker-compose.yml  Postgres, Redis, migrations, API e worker
-.env.example        template das envs do backend (copiar para backend/.env)
-PLANO.md            plano completo: escopo, arquitetura, deploy, testes
+backend/             Django + DRF + Channels (API, domínio, worker, testes)
+front/               React + Vite + TypeScript (SPA)
+.github/workflows/   CI: suíte backend (Postgres) + build/lint/testes do front
+backend/.env.example template das envs do backend (copiar para backend/.env)
+docker-compose.yml   Postgres, Redis, migrations, API, worker e front
+PLANO.md             plano completo: escopo, arquitetura, deploy, testes
 ```
+
+## Comportamentos conhecidos
+
+Pouco óbvios de propósito, documentados aqui (o escopo pede que
+"comportamentos inesperados" sejam mencionados):
+
+- **Lote do seed "pula" de horário a cada reexecução** — `seed_demo`
+  reposiciona o fim do lote ao vivo para ~10 min a partir de agora,
+  para a demonstração sempre ter janela. Lotes com lance já liquidado
+  não são revividos.
+- **Começo de lote só efetiva no primeiro lance ou no worker** — sem o
+  `settle_auctions_loop`, um lote agendado que venceu a janela de
+  início só transiciona para `live` quando o primeiro lance passa pela
+  validação (lazy) ou quando o worker roda. A sala, porém, já o trata
+  como ao vivo assim que o relógio bate.
+- **Catálogo do ArtIC nem sempre traz descrição/atributos** — a fonte
+  nem sempre devolve texto; nesse caso a ficha da obra aparece com os
+  campos disponíveis e a importação segue.
