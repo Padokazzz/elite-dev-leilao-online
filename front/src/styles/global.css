@@ -296,6 +296,21 @@ h1 {
   gap: 0.6rem;
 }
 
+.search-trigger,
+.filters-btn,
+.sheet-title,
+.sheet-actions,
+.sheet-backdrop,
+.sheet-error,
+.sheet-clear,
+.sheet-apply {
+  display: none;
+}
+
+.price-row {
+  display: contents;
+}
+
 .pagination {
   display: flex;
   align-items: center;
@@ -383,6 +398,176 @@ h1 {
   .pagination {
     flex-wrap: wrap;
     justify-content: center;
+  }
+
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .vitrine-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+  }
+
+  .vitrine-controls[data-open="true"] > .feedback-error {
+    display: none;
+  }
+
+  .search-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1 1 auto;
+    min-height: 44px;
+    min-width: 0;
+    padding: 0 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2);
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 0.95rem;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+
+  .filters-btn {
+    display: inline-flex;
+    min-height: 44px;
+    gap: 0.4rem;
+  }
+
+  .filter-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.4rem;
+    height: 1.4rem;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  .filters {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom));
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -12px 32px rgb(0 0 0 / 0.4);
+    transform: translateY(105%);
+    visibility: hidden;
+    transition:
+      transform 0.22s ease,
+      visibility 0.22s;
+  }
+
+  .filters[data-open="true"] {
+    transform: translateY(0);
+    visibility: visible;
+  }
+
+  .price-row {
+    display: flex;
+    gap: 0.6rem;
+  }
+
+  .price-row .input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .sheet-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  .sheet-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin: -0.5rem -0.5rem -0.5rem 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 1.1rem;
+    cursor: pointer;
+  }
+
+  .filters-submit {
+    display: none;
+  }
+
+  .sheet-error {
+    display: block;
+    margin: 0;
+  }
+
+  .sheet-actions {
+    display: flex;
+    gap: 0.6rem;
+  }
+
+  .sheet-clear {
+    display: inline-flex;
+    flex: 1;
+  }
+
+  .sheet-apply {
+    display: inline-flex;
+    flex: 2;
+  }
+
+  .sheet-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+  }
+
+  .sheet-backdrop[data-open="true"] {
+    opacity: 0.5;
+    pointer-events: auto;
+  }
+
+  body:has(.filters[data-open="true"]) {
+    overflow: hidden;
   }
 }
 
