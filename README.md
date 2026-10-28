@@ -95,8 +95,10 @@ python manage.py runserver          # ASGI via daphne (WebSockets inclusos)
 python manage.py settle_auctions_loop --interval 5   # worker, em outro terminal
 ```
 
-Sem o worker, o status na vitrine só corrige quando você abre o lote
-(lazy settle) — é esperado.
+Sem o worker, o fim do lote corrige quando você abre o lote (lazy
+settle) e o início só muda no banco quando o primeiro lance é aceito —
+a sala, porém, já se comporta como ao vivo assim que o relógio bate, e
+o worker deixa vitrine e filtros verdadeiros em até 5 s.
 
 ### Manual — front
 
