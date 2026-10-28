@@ -114,11 +114,6 @@ h1 {
   border-color: var(--border);
 }
 
-.btn-danger {
-  background: var(--danger);
-  color: #ffffff;
-}
-
 .input,
 .select {
   width: 100%;
@@ -149,6 +144,7 @@ h1 {
   border-radius: 999px;
   font-size: 0.78rem;
   font-weight: 600;
+  white-space: nowrap;
   background: var(--surface-2);
   color: var(--muted);
   border: 1px solid var(--border);
@@ -160,8 +156,7 @@ h1 {
   border-color: transparent;
 }
 
-.badge-cancelled,
-.badge-error {
+.badge-cancelled {
   background: var(--danger-soft);
   color: var(--danger);
   border-color: transparent;

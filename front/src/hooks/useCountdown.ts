@@ -1,12 +1,5 @@
 import { useEffect, useState } from "react";
 
-export function endsInMs(endsAt: string | null): number | null {
-  if (!endsAt) {
-    return null;
-  }
-  return new Date(endsAt).getTime() - Date.now();
-}
-
 export default function useCountdown(
   target: string | null,
   active: boolean,

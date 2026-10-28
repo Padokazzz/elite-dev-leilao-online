@@ -143,24 +143,6 @@ export type RoomEvent =
   | AuctionClosedEvent
   | AuctionCancelledEvent;
 
-export type AuditRow = {
-  seq: number;
-  amount_cents: number;
-  accepted_at: string;
-  bidder: string;
-};
-
-export type AuditReport = {
-  auction_id: number;
-  intact: boolean;
-  chain: AuditRow[];
-  tampered: {
-    seq: number;
-    reason: string;
-    expected_seq?: number;
-  } | null;
-};
-
 export type Receipt = {
   public_uuid: string;
   auction_id: number;

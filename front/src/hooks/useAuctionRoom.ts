@@ -15,7 +15,7 @@ const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_UNKNOWN_AUCTION = 4404;
 const MAX_ATTEMPTS = 5;
 
-export type RoomUnavailable =
+type RoomUnavailable =
   | "unauthenticated"
   | "unknown"
   | "offline"

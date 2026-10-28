@@ -66,7 +66,7 @@ type RequestOptions = {
   auth?: boolean;
 };
 
-export async function request<T>(
+async function request<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {

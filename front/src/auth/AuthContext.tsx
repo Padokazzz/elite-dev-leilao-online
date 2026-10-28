@@ -19,7 +19,7 @@ import type { LoginResponse, Role, User } from "../api/types";
 
 const USER_KEY = "user";
 
-export type RegisterInput = {
+type RegisterInput = {
   username: string;
   email: string;
   password: string;
