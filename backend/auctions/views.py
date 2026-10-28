@@ -8,14 +8,16 @@ from rest_framework.views import APIView
 
 from accounts.permissions import IsAuctioneer
 from receipts.models import Receipt
+from wallets.exceptions import HoldInconsistentError
 
 from .models import Auction
 from .pagination import AuctionPagination
 from .serializers import AuctionCreateSerializer, AuctionScheduleSerializer
 from .services import (
     CancelRejected,
+    RescheduleRejected,
     cancel_auction,
-    settle_expired_auctions,
+    reschedule_auction,
     settle_if_expired,
 )
 
@@ -116,8 +118,6 @@ class AuctionListCreateView(APIView):
         return super().get_permissions()
 
     def get(self, request):
-        settle_expired_auctions()
-
         auctions = (
             Auction.objects.select_related("item", "seller", "winner")
             .annotate(bid_count=Count("bids"))
@@ -168,21 +168,28 @@ class AuctionManageView(APIView):
         if auction.seller_id != request.user.pk:
             return _not_owner()
 
-        auction = settle_if_expired(auction)
-
-        if auction.status != Auction.Status.SCHEDULED:
-            return Response(
-                {"detail": "A programação só muda antes do lote começar."},
-                status=status.HTTP_409_CONFLICT,
-            )
-
         serializer = AuctionScheduleSerializer(
             instance=auction,
             data=request.data,
             partial=True,
         )
         serializer.is_valid(raise_exception=True)
-        auction = serializer.save()
+
+        try:
+            auction = reschedule_auction(
+                auction_id=auction.pk,
+                starts_at=serializer.validated_data.get(
+                    "starts_at", auction.starts_at
+                ),
+                ends_at=serializer.validated_data.get(
+                    "ends_at", auction.ends_at
+                ),
+            )
+        except RescheduleRejected:
+            return Response(
+                {"detail": "A programação só muda antes do lote começar."},
+                status=status.HTTP_409_CONFLICT,
+            )
 
         return Response(auction_payload(auction))
 
@@ -205,6 +212,11 @@ class AuctionCancelView(APIView):
                 {"detail": "Este lote não pode mais ser cancelado."},
                 status=status.HTTP_409_CONFLICT,
             )
+        except HoldInconsistentError:
+            return Response(
+                {"detail": "Estado inconsistente de hold; contate o suporte."},
+                status=status.HTTP_409_CONFLICT,
+            )
 
         auction = Auction.objects.select_related("item").get(pk=auction.pk)
 
@@ -215,8 +227,6 @@ class AuctionMineView(APIView):
     permission_classes = [IsAuthenticated, IsAuctioneer]
 
     def get(self, request):
-        settle_expired_auctions()
-
         auctions = (
             Auction.objects.select_related("item", "seller", "winner")
             .annotate(bid_count=Count("bids"))
@@ -267,8 +277,6 @@ class AuctionWonView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        settle_expired_auctions()
-
         auctions = (
             Auction.objects.select_related("item", "seller", "winner")
             .annotate(bid_count=Count("bids"))

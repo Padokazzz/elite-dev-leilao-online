@@ -2,12 +2,14 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import RequestFactory, TestCase
 from django.db import IntegrityError, transaction
 
 from rest_framework import status
 from rest_framework.authtoken.models import Token
+from rest_framework.settings import api_settings
 from rest_framework.test import APITestCase
+from rest_framework.throttling import SimpleRateThrottle
 
 from .serializers import RegisterSerializer
 
@@ -321,6 +323,28 @@ class LoginThrottleTests(APITestCase):
             response.status_code,
             status.HTTP_429_TOO_MANY_REQUESTS,
         )
+
+
+class ThrottleIdentTests(TestCase):
+    class Probe(SimpleRateThrottle):
+        rate = "1000/min"
+
+    def test_settings_trust_exactly_one_proxy(self):
+        self.assertEqual(api_settings.NUM_PROXIES, 1)
+
+    def test_ident_uses_the_hop_the_trusted_proxy_added(self):
+        request = RequestFactory().get(
+            "/", HTTP_X_FORWARDED_FOR="203.0.113.7, 198.51.100.9"
+        )
+
+        self.assertEqual(
+            self.Probe().get_ident(request), "198.51.100.9"
+        )
+
+    def test_ident_falls_back_to_the_remote_address(self):
+        request = RequestFactory().get("/")
+
+        self.assertEqual(self.Probe().get_ident(request), "127.0.0.1")
 
 
 class MeEndpointTests(APITestCase):

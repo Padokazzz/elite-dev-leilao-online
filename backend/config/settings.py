@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 
 from dotenv import load_dotenv
 
@@ -29,7 +30,7 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
 if not SECRET_KEY:
     raise RuntimeError("DJANGO_SECRET_KEY não configurada.")
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "True") == "True"
+DEBUG = os.getenv("DEBUG", "False") == "True"
 
 ALLOWED_HOSTS = [
     h.strip() for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h.strip()
@@ -172,10 +173,14 @@ REST_FRAMEWORK = {
         "wallet_deposit": "30/min",
         "bid_place": "60/min",
     },
+    "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "1")),
 }
 
 # --- Tempo real (Channels) ---
 REDIS_URL = os.getenv("REDIS_URL", "").strip()
+
+if not REDIS_URL and not DEBUG and "test" not in sys.argv:
+    raise RuntimeError("REDIS_URL não configurada fora de desenvolvimento.")
 
 if REDIS_URL:
     CHANNEL_LAYERS = {

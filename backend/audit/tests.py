@@ -83,10 +83,10 @@ class AuditChainTests(APITestCase):
         chain = response.data["chain"]
 
         self.assertEqual([row["seq"] for row in chain], [1, 2, 3])
-        self.assertEqual(chain[0]["prev_hash"], "0" * 64)
-
-        for older, newer in zip(chain, chain[1:]):
-            self.assertEqual(newer["prev_hash"], older["hash"])
+        for row in chain:
+            self.assertEqual(
+                set(row), {"seq", "amount_cents", "accepted_at", "bidder"}
+            )
 
     def test_hash_covers_every_field(self):
         now = timezone.now()
@@ -126,6 +126,23 @@ class AuditChainTests(APITestCase):
         self.assertEqual(response.data["tampered"]["reason"], "hash_mismatch")
         self.assertEqual(len(response.data["chain"]), 1)
 
+    def test_tampering_only_the_stored_prev_hash_is_caught(self):
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE bidding_bid SET prev_hash = %s "
+                "WHERE auction_id = %s AND seq = 2",
+                ["f" * 64, self.auction.pk],
+            )
+
+        response = self.client.get(self.url)
+
+        self.assertFalse(response.data["intact"])
+        self.assertEqual(response.data["tampered"]["seq"], 2)
+        self.assertEqual(
+            response.data["tampered"]["reason"], "prev_hash_mismatch"
+        )
+        self.assertEqual(len(response.data["chain"]), 1)
+
     def test_a_deleted_bid_is_caught_by_the_next_line(self):
         Bid.objects.filter(auction=self.auction, seq=2).delete()
 
@@ -144,6 +161,7 @@ class AuditChainTests(APITestCase):
         for user in (self.alice, self.bob, self.seller):
             self.assertNotIn(user.email, body)
         self.assertNotIn("@", body)
+        self.assertNotIn("hash", body)
         self.assertRegex(
             response.data["chain"][0]["bidder"], r"^Licitante #[0-9a-f]{8}$"
         )

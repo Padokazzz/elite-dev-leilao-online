@@ -1,9 +1,16 @@
 from datetime import timedelta
 from io import StringIO
+from threading import Barrier, Thread
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
+from django.db import OperationalError, connections
+from django.db.models import Sum
+from django.test import TransactionTestCase
 from django.utils import timezone
+
+import signal
 
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
@@ -13,6 +20,7 @@ from bidding.services import place_bid
 from bidding.tests import fund, make_auction, make_user
 from catalog.models import AuctionItem
 from receipts.models import Receipt
+from wallets.exceptions import HoldInconsistentError
 from wallets.models import Wallet, WalletTransaction
 
 from .models import Auction
@@ -143,6 +151,143 @@ class SettlementTests(APITestCase):
         self.assertEqual(self.auction.status, Auction.Status.ENDED)
         self.assertTrue(Receipt.objects.filter(auction=self.auction).exists())
 
+    def test_settle_refuses_when_the_hold_is_inconsistent(self):
+        place_bid(
+            auction_id=self.auction.pk, bidder=self.alice, amount_cents=10_000
+        )
+        Wallet.objects.filter(user=self.alice).update(committed_cents=0)
+        self._expire(self.auction)
+
+        with self.assertRaises(HoldInconsistentError):
+            settle_auction(self.auction.pk)
+
+        self.auction.refresh_from_db()
+        self.assertEqual(self.auction.status, Auction.Status.LIVE)
+        self.assertEqual(
+            Wallet.objects.get(user=self.alice).balance_cents, 100_000
+        )
+        seller_wallet, _ = Wallet.objects.get_or_create(user=self.seller)
+        self.assertEqual(seller_wallet.balance_cents, 0)
+        self.assertFalse(Receipt.objects.filter(auction=self.auction).exists())
+
+    def test_a_poisoned_lot_does_not_block_the_others(self):
+        place_bid(
+            auction_id=self.auction.pk, bidder=self.alice, amount_cents=10_000
+        )
+        healthy = make_auction(self.seller, status=Auction.Status.SCHEDULED)
+        place_bid(
+            auction_id=healthy.pk, bidder=self.bob, amount_cents=10_000
+        )
+
+        Wallet.objects.filter(user=self.alice).update(committed_cents=0)
+        self._expire(self.auction)
+        self._expire(healthy)
+
+        with patch("auctions.services.logger") as logger:
+            count = settle_expired_auctions()
+
+        logger.exception.assert_called()
+        self.assertEqual(count, 1)
+        self.auction.refresh_from_db()
+        healthy.refresh_from_db()
+        self.assertEqual(self.auction.status, Auction.Status.LIVE)
+        self.assertFalse(Receipt.objects.filter(auction=self.auction).exists())
+        self.assertEqual(healthy.status, Auction.Status.ENDED)
+        self.assertTrue(Receipt.objects.filter(auction=healthy).exists())
+
+    def test_worker_keeps_running_after_a_failed_round(self):
+        previous_term = signal.getsignal(signal.SIGTERM)
+        previous_int = signal.getsignal(signal.SIGINT)
+        stderr = StringIO()
+        stdout = StringIO()
+
+        try:
+            with patch(
+                "auctions.management.commands.settle_auctions_loop"
+                ".settle_expired_auctions",
+                side_effect=[
+                    OperationalError("banco indisponível"),
+                    KeyboardInterrupt(),
+                ],
+            ) as tick:
+                with self.assertRaises(KeyboardInterrupt):
+                    call_command(
+                        "settle_auctions_loop",
+                        interval=0,
+                        stderr=stderr,
+                        stdout=stdout,
+                    )
+        finally:
+            signal.signal(signal.SIGTERM, previous_term)
+            signal.signal(signal.SIGINT, previous_int)
+
+        self.assertEqual(tick.call_count, 2)
+        self.assertIn("falha na rodada", stderr.getvalue())
+        self.assertIn("worker de liquidação ativo", stdout.getvalue())
+
+
+class ConcurrentSettlementTests(TransactionTestCase):
+
+    def setUp(self):
+        self.seller = make_user(
+            username="cset_seller",
+            email="cset_seller@example.com",
+            role=User.Role.AUCTIONEER,
+        )
+        self.alice = make_user(
+            username="cset_alice", email="cset_alice@example.com"
+        )
+        self.auction = make_auction(
+            self.seller, status=Auction.Status.SCHEDULED
+        )
+        fund(self.alice, 100_000)
+        place_bid(
+            auction_id=self.auction.pk, bidder=self.alice, amount_cents=10_000
+        )
+        Auction.objects.filter(pk=self.auction.pk).update(
+            ends_at=timezone.now() - timedelta(minutes=1)
+        )
+
+    def test_concurrent_settlements_move_the_money_exactly_once(self):
+        auction_id = self.auction.pk
+        barrier = Barrier(2)
+        results = []
+
+        def settle():
+            try:
+                barrier.wait(timeout=10)
+                results.append(settle_auction(auction_id))
+            except Exception as exc:
+                results.append(type(exc).__name__)
+            finally:
+                connections.close_all()
+
+        threads = [Thread(target=settle, daemon=True) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        self.assertEqual(len(results), 2, results)
+        self.assertEqual(sorted(results, key=str), [False, True], results)
+
+        auction = Auction.objects.get(pk=auction_id)
+        self.assertEqual(auction.status, Auction.Status.ENDED)
+        self.assertEqual(auction.winner_id, self.alice.pk)
+        self.assertEqual(Receipt.objects.filter(auction_id=auction_id).count(), 1)
+
+        seller_wallet = Wallet.objects.get(user=self.seller)
+        self.assertEqual(seller_wallet.balance_cents, 10_000)
+
+        winner_wallet = Wallet.objects.get(user=self.alice)
+        self.assertEqual(winner_wallet.balance_cents, 90_000)
+        self.assertEqual(winner_wallet.committed_cents, 0)
+
+        self.assertEqual(
+            Wallet.objects.aggregate(total=Sum("balance_cents"))["total"],
+            100_000,
+        )
+
 
 class AuctionManagementTests(APITestCase):
 
@@ -257,6 +402,20 @@ class AuctionManagementTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(Auction.objects.count(), 0)
 
+    def test_create_rejects_a_past_window_that_already_started(self):
+        now = timezone.now()
+        response = self.client.post(
+            self.url,
+            self._payload(
+                starts_at=(now - timedelta(hours=3)).isoformat(),
+                ends_at=(now - timedelta(hours=1)).isoformat(),
+            ),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Auction.objects.count(), 0)
+
     def test_patch_is_rejected_for_another_auctioneer(self):
         auction = make_auction(self.seller, status=Auction.Status.SCHEDULED)
         self._auth(self.other)
@@ -330,6 +489,56 @@ class AuctionManagementTests(APITestCase):
         self.assertEqual(response.data["starting_bid_cents"], 10_000)
         auction.refresh_from_db()
         self.assertEqual(auction.starting_bid_cents, 10_000)
+
+    def test_patch_rejects_an_end_in_the_past(self):
+        auction = make_auction(self.seller, status=Auction.Status.SCHEDULED)
+        original_end = auction.ends_at
+
+        response = self.client.patch(
+            f"{self.url}{auction.pk}/",
+            {"ends_at": (timezone.now() - timedelta(minutes=5)).isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        auction.refresh_from_db()
+        self.assertEqual(auction.ends_at, original_end)
+
+    def test_patch_settles_an_expired_lot_before_rejecting(self):
+        auction = make_auction(self.seller, status=Auction.Status.SCHEDULED)
+        place_bid(
+            auction_id=auction.pk, bidder=self.alice, amount_cents=10_000
+        )
+        self._expire(auction)
+
+        response = self.client.patch(
+            f"{self.url}{auction.pk}/",
+            {"ends_at": (timezone.now() + timedelta(hours=2)).isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        auction.refresh_from_db()
+        self.assertEqual(auction.status, Auction.Status.ENDED)
+        self.assertTrue(Receipt.objects.filter(auction=auction).exists())
+
+    def test_patch_only_moves_the_boundary_it_received(self):
+        auction = make_auction(self.seller, status=Auction.Status.SCHEDULED)
+        original_start = auction.starts_at
+        new_end = timezone.now() + timedelta(hours=3)
+
+        response = self.client.patch(
+            f"{self.url}{auction.pk}/",
+            {"ends_at": new_end.isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        auction.refresh_from_db()
+        self.assertEqual(auction.starts_at, original_start)
+        self.assertAlmostEqual(
+            auction.ends_at, new_end, delta=timedelta(seconds=1)
+        )
 
     def test_cancel_releases_the_leader_hold(self):
         auction = make_auction(self.seller, status=Auction.Status.SCHEDULED)
@@ -412,6 +621,22 @@ class AuctionManagementTests(APITestCase):
         self.assertEqual(response.status_code, 409)
         auction.refresh_from_db()
         self.assertEqual(auction.status, Auction.Status.ENDED)
+        self.assertEqual(
+            Wallet.objects.get(user=self.alice).committed_cents, 0
+        )
+
+    def test_cancel_with_inconsistent_hold_returns_conflict(self):
+        auction = make_auction(self.seller, status=Auction.Status.SCHEDULED)
+        place_bid(
+            auction_id=auction.pk, bidder=self.alice, amount_cents=10_000
+        )
+        Wallet.objects.filter(user=self.alice).update(committed_cents=0)
+
+        response = self.client.post(f"{self.url}{auction.pk}/cancel/")
+
+        self.assertEqual(response.status_code, 409)
+        auction.refresh_from_db()
+        self.assertEqual(auction.status, Auction.Status.LIVE)
         self.assertEqual(
             Wallet.objects.get(user=self.alice).committed_cents, 0
         )
@@ -539,7 +764,7 @@ class AuctionVitrineTests(APITestCase):
         self.assertEqual(response.data["count"], 60)
         self.assertEqual(len(response.data["results"]), 50)
 
-    def test_list_settles_expired_before_returning(self):
+    def test_list_leaves_settlement_to_the_worker(self):
         auction = self._auction(status=Auction.Status.SCHEDULED)
         place_bid(
             auction_id=auction.pk, bidder=self.alice, amount_cents=10_000
@@ -549,10 +774,21 @@ class AuctionVitrineTests(APITestCase):
         response = self.client.get(self.url)
 
         item = response.data["results"][0]
+        self.assertEqual(item["status"], Auction.Status.LIVE)
+        self.assertIsNone(item["winner_pseudonym"])
+        self.assertEqual(item["bid_count"], 1)
+        self.assertFalse(Receipt.objects.filter(auction=auction).exists())
+        self.assertEqual(
+            Wallet.objects.get(user=self.alice).committed_cents, 10_000
+        )
+
+        settle_auction(auction.pk)
+
+        response = self.client.get(self.url)
+
+        item = response.data["results"][0]
         self.assertEqual(item["status"], Auction.Status.ENDED)
         self.assertEqual(item["winner_pseudonym"], pseudo(self.alice))
-        self.assertEqual(item["bid_count"], 1)
-        self.assertTrue(Receipt.objects.filter(auction=auction).exists())
 
     def test_detail_is_public_and_hides_identity(self):
         auction = self._auction()

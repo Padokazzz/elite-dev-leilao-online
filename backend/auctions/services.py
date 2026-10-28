@@ -1,11 +1,18 @@
+import logging
+
 from django.db import transaction
 from django.utils import timezone
 
+from audit.services import pseudo
+from bidding.events import publish_auction_cancelled, publish_auction_closed
 from receipts.models import Receipt
+from wallets.exceptions import HoldInconsistentError
 from wallets.models import WalletTransaction
 from wallets.services import lock_wallets, release_hold
 
 from .models import Auction
+
+logger = logging.getLogger(__name__)
 
 
 def settle_auction(auction_id: int) -> bool:
@@ -22,12 +29,26 @@ def settle_auction(auction_id: int) -> bool:
         if winner_bid is None:
             auction.status = Auction.Status.ENDED
             auction.save(update_fields=["status", "updated_at"])
+            transaction.on_commit(
+                lambda: publish_auction_closed(
+                    auction_id=auction.pk,
+                    winner_id=None,
+                    winner_pseudonym=None,
+                    receipt_public_uuid=None,
+                    amount_cents=None,
+                )
+            )
             return True
 
         wallets = lock_wallets([winner_bid.bidder_id, auction.seller_id])
         winner_wallet = wallets[winner_bid.bidder_id]
         seller_wallet = wallets[auction.seller_id]
         amount = winner_bid.amount_cents
+
+        if winner_wallet.committed_cents < amount:
+            raise HoldInconsistentError(
+                "Saldo comprometido inconsistente ao liquidar o lote."
+            )
 
         winner_wallet.balance_cents -= amount
         winner_wallet.committed_cents -= amount
@@ -60,11 +81,21 @@ def settle_auction(auction_id: int) -> bool:
         auction.winner = winner_bid.bidder
         auction.save(update_fields=["status", "winner", "updated_at"])
 
-        Receipt.objects.create(
+        receipt = Receipt.objects.create(
             auction=auction,
             winner=winner_bid.bidder,
             seller=auction.seller,
             amount_cents=amount,
+        )
+
+        transaction.on_commit(
+            lambda: publish_auction_closed(
+                auction_id=auction.pk,
+                winner_id=winner_bid.bidder_id,
+                winner_pseudonym=pseudo(winner_bid.bidder),
+                receipt_public_uuid=str(receipt.public_uuid),
+                amount_cents=amount,
+            )
         )
 
         return True
@@ -78,7 +109,15 @@ def settle_expired_auctions() -> int:
         ).values_list("pk", flat=True)
     )
 
-    return sum(1 for auction_id in expired if settle_auction(auction_id))
+    settled = 0
+    for auction_id in expired:
+        try:
+            if settle_auction(auction_id):
+                settled += 1
+        except Exception:
+            logger.exception("falha ao liquidar o lote %s", auction_id)
+
+    return settled
 
 
 def settle_if_expired(auction: Auction) -> Auction:
@@ -87,8 +126,40 @@ def settle_if_expired(auction: Auction) -> Auction:
         Auction.Status.SCHEDULED,
     ) and auction.ends_at <= timezone.now()
 
-    if pending and settle_auction(auction.pk):
-        auction.refresh_from_db()
+    if pending:
+        try:
+            settled = settle_auction(auction.pk)
+        except Exception:
+            logger.exception("falha ao liquidar o lote %s", auction.pk)
+            settled = False
+
+        if settled:
+            auction.refresh_from_db()
+
+    return auction
+
+
+class RescheduleRejected(Exception):
+    pass
+
+
+def reschedule_auction(*, auction_id: int, starts_at, ends_at) -> Auction:
+    with transaction.atomic():
+        auction = (
+            Auction.objects.select_for_update(of=("self",))
+            .select_related("item", "seller", "winner")
+            .get(pk=auction_id)
+        )
+
+        settle_if_expired(auction)
+
+        if auction.status == Auction.Status.SCHEDULED:
+            auction.starts_at = starts_at
+            auction.ends_at = ends_at
+            auction.save(update_fields=["starts_at", "ends_at", "updated_at"])
+
+    if auction.status != Auction.Status.SCHEDULED:
+        raise RescheduleRejected
 
     return auction
 
@@ -122,5 +193,8 @@ def cancel_auction(*, auction_id: int, seller) -> Auction:
 
         auction.status = Auction.Status.CANCELLED
         auction.save(update_fields=["status", "updated_at"])
+        transaction.on_commit(
+            lambda: publish_auction_cancelled(auction.pk)
+        )
 
     return auction

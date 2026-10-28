@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
@@ -7,6 +7,7 @@ from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from django.core.cache import cache
 
+from audit.services import pseudo
 from auctions.models import Auction
 from auctions.services import cancel_auction, settle_auction
 from catalog.models import AuctionItem
@@ -606,6 +607,7 @@ class AuctionRoomTests(APITransactionTestCase):
         )
         self.auction = make_auction(self.seller)
         self.token = Token.objects.create(user=self.alice)
+        self.seller_token = Token.objects.create(user=self.seller)
         self.origin = [(b"origin", b"http://testserver")]
 
         # A segunda aba do teste de integração, e saldo para dar lance:
@@ -711,9 +713,143 @@ class AuctionRoomTests(APITransactionTestCase):
             self.assertEqual(message["bid"]["amount_cents"], 10_000)
             self.assertFalse(message["extended"])
             self.assertEqual(message["next_minimum_cents"], 11_000)
+            self.assertNotIn("bidder_id", message)
+
+        self.assertTrue(first["is_you"])
+        self.assertFalse(second["is_you"])
 
         await alice_room.disconnect()
         await bob_room.disconnect()
+
+    async def test_bid_close_to_the_deadline_broadcasts_the_extension(self):
+        await sync_to_async(Auction.objects.filter(pk=self.auction.pk).update)(
+            ends_at=timezone.now() + timedelta(seconds=30)
+        )
+        original = await sync_to_async(Auction.objects.get)(pk=self.auction.pk)
+        original_end = original.ends_at
+
+        room = self._room(self.token.key)
+        connected, _ = await room.connect()
+        self.assertTrue(connected)
+        await room.receive_json_from(timeout=2)
+
+        response = await sync_to_async(self.client.post)(
+            f"/api/auctions/{self.auction.pk}/bids/",
+            {"amount_cents": 10_000},
+            format="json",
+            HTTP_AUTHORIZATION=f"Token {self.token.key}",
+        )
+        self.assertEqual(response.status_code, 201)
+
+        message = await room.receive_json_from(timeout=2)
+
+        self.assertEqual(message["type"], "bid.placed")
+        self.assertTrue(message["extended"])
+        self.assertTrue(message["is_you"])
+        self.assertGreater(
+            datetime.fromisoformat(message["ends_at"]), original_end
+        )
+
+        await room.disconnect()
+
+    async def test_connecting_to_an_expired_lot_shows_it_settled(self):
+        await sync_to_async(place_bid)(
+            auction_id=self.auction.pk,
+            bidder=self.bob,
+            amount_cents=10_000,
+        )
+        await sync_to_async(Auction.objects.filter(pk=self.auction.pk).update)(
+            ends_at=timezone.now() - timedelta(minutes=1)
+        )
+
+        room = self._room(self.bob_token.key)
+        connected, _ = await room.connect()
+        self.assertTrue(connected)
+
+        snapshot = await room.receive_json_from(timeout=2)
+        self.assertEqual(snapshot["type"], "room.snapshot")
+        self.assertEqual(snapshot["status"], Auction.Status.ENDED)
+        self.assertEqual(snapshot["last_bid_cents"], 10_000)
+        self.assertTrue(snapshot["you_lead"])
+
+        closed = await room.receive_json_from(timeout=2)
+        self.assertEqual(closed["type"], "auction.closed")
+        self.assertEqual(closed["winner_pseudonym"], pseudo(self.bob))
+        self.assertEqual(closed["amount_cents"], 10_000)
+        self.assertTrue(closed["you_won"])
+        self.assertIsNotNone(closed["receipt_public_uuid"])
+
+        await room.disconnect()
+
+    async def test_settlement_announces_the_winner_to_everyone(self):
+        alice_room = self._room(self.token.key)
+        connected, _ = await alice_room.connect()
+        self.assertTrue(connected)
+        await alice_room.receive_json_from(timeout=2)
+
+        bob_room = self._room(self.bob_token.key)
+        connected, _ = await bob_room.connect()
+        self.assertTrue(connected)
+        await bob_room.receive_json_from(timeout=2)
+
+        response = await sync_to_async(self.client.post)(
+            f"/api/auctions/{self.auction.pk}/bids/",
+            {"amount_cents": 10_000},
+            format="json",
+            HTTP_AUTHORIZATION=f"Token {self.bob_token.key}",
+        )
+        self.assertEqual(response.status_code, 201)
+
+        bid_at_alice = await alice_room.receive_json_from(timeout=2)
+        bid_at_bob = await bob_room.receive_json_from(timeout=2)
+        self.assertEqual(bid_at_alice["type"], "bid.placed")
+        self.assertEqual(bid_at_bob["type"], "bid.placed")
+        self.assertTrue(bid_at_bob["is_you"])
+        self.assertFalse(bid_at_alice["is_you"])
+
+        await sync_to_async(Auction.objects.filter(pk=self.auction.pk).update)(
+            ends_at=timezone.now() - timedelta(minutes=1)
+        )
+
+        response = await sync_to_async(self.client.get)(
+            f"/api/auctions/{self.auction.pk}/"
+        )
+        self.assertEqual(response.status_code, 200)
+
+        from_alice = await alice_room.receive_json_from(timeout=2)
+        from_bob = await bob_room.receive_json_from(timeout=2)
+
+        for message in (from_alice, from_bob):
+            self.assertEqual(message["type"], "auction.closed")
+            self.assertEqual(message["winner_pseudonym"], pseudo(self.bob))
+            self.assertEqual(message["amount_cents"], 10_000)
+            self.assertIsNotNone(message["receipt_public_uuid"])
+
+        self.assertFalse(from_alice["you_won"])
+        self.assertTrue(from_bob["you_won"])
+
+        await alice_room.disconnect()
+        await bob_room.disconnect()
+
+    async def test_cancellation_reaches_the_room(self):
+        room = self._room(self.token.key)
+        connected, _ = await room.connect()
+        self.assertTrue(connected)
+        await room.receive_json_from(timeout=2)
+
+        response = await sync_to_async(self.client.post)(
+            f"/api/auctions/{self.auction.pk}/cancel/",
+            format="json",
+            HTTP_AUTHORIZATION=f"Token {self.seller_token.key}",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        message = await room.receive_json_from(timeout=2)
+
+        self.assertEqual(message["type"], "auction.cancelled")
+        self.assertEqual(message["auction_id"], self.auction.pk)
+
+        await room.disconnect()
 
 
 class MyBidsTests(APITestCase):
