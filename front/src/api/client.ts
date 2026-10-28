@@ -8,6 +8,10 @@ const TOKEN_KEY = "token";
 
 let onUnauthorized: (() => void) | null = null;
 
+export function apiUrl(path: string): string {
+  return `${BASE}${path}`;
+}
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }

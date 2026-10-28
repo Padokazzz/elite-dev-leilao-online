@@ -1,18 +1,24 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
+import { apiUrl } from "../api/client";
 import type { Auction } from "../api/types";
 import { formatDateTime } from "../lib/datetime";
 import { formatCents } from "../lib/money";
 import StatusBadge from "./StatusBadge";
 
 export default function AuctionCard({ auction }: { auction: Auction }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = Boolean(auction.item_image_url) && !imageFailed;
+
   return (
     <Link to={`/lotes/${auction.id}`} className="card auction-card">
-      {auction.item_image_url ? (
+      {showImage ? (
         <img
           className="auction-thumb"
-          src={auction.item_image_url}
+          src={apiUrl(`/api/catalog/image/${auction.item_id}/`)}
           alt={auction.item_title}
           loading="lazy"
+          onError={() => setImageFailed(true)}
         />
       ) : (
         <div className="auction-thumb placeholder" aria-hidden="true">
@@ -25,7 +31,8 @@ export default function AuctionCard({ auction }: { auction: Auction }) {
       </div>
       <p className="muted">Leiloeiro: {auction.seller_pseudonym}</p>
       <p>
-        Lance inicial: <strong>{formatCents(auction.starting_bid_cents)}</strong>
+        Lance inicial:{" "}
+        <strong>{formatCents(auction.starting_bid_cents)}</strong>
       </p>
       <p className="muted">
         {auction.bid_count ?? 0} lance(s) · termina{" "}
