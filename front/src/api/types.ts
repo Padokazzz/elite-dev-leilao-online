@@ -42,6 +42,8 @@ export type ArtworkSearchResult = {
   title: string;
   description: string;
   image_url: string;
+  /** image_id do ArtIC; vazio quando a obra não tem imagem. */
+  image_id: string;
 };
 
 export type ImportedArtwork = {

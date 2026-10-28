@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { api, ApiError } from "../api/client";
+import { api, apiUrl, ApiError } from "../api/client";
 import type {
   ArtworkSearchResult,
   AuctionStatus,
@@ -12,6 +12,7 @@ import type {
 import { useAuth } from "../auth/AuthContext";
 import Pagination from "../components/Pagination";
 import StatusBadge from "../components/StatusBadge";
+import Thumb from "../components/Thumb";
 import { formatDateTime, toDateTimeLocalValue } from "../lib/datetime";
 import { formatCents, parseBrlToCents } from "../lib/money";
 
@@ -49,6 +50,11 @@ function resultLabel(auction: MineAuction): string {
   return "Aguardando o início";
 }
 
+/** Miniatura de obra ainda não importada (proxy do servidor; o ArtIC bloqueia hotlink). */
+function previewSrc(imageId: string): string | null {
+  return imageId ? apiUrl(`/api/catalog/preview/${imageId}/`) : null;
+}
+
 export default function PainelPage() {
   const { user, ready } = useAuth();
   const location = useLocation();
@@ -67,7 +73,9 @@ export default function PainelPage() {
 
   const [importingId, setImportingId] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<ImportedArtwork | null>(null);
+  const [selected, setSelected] = useState<
+    (ImportedArtwork & { imageId: string }) | null
+  >(null);
 
   const [startingBid, setStartingBid] = useState("");
   const [increment, setIncrement] = useState("");
@@ -157,7 +165,7 @@ export default function PainelPage() {
       const item = await api.post<ImportedArtwork>("/api/catalog/import/", {
         external_id: artwork.id,
       });
-      setSelected(item);
+      setSelected({ ...item, imageId: artwork.image_id });
       setResults(null);
       setQuery("");
     } catch (exc) {
@@ -309,8 +317,16 @@ export default function PainelPage() {
         <h2>Criar lote</h2>
         {selected ? (
           <>
-            <p className="muted">
-              Obra selecionada: <strong>{selected.title}</strong>{" "}
+            <div className="selected-artwork">
+              <Thumb
+                src={previewSrc(selected.imageId)}
+                alt={selected.title}
+                className="selected-thumb"
+              />
+              <div className="selected-artwork-text">
+                <span className="muted">Obra selecionada</span>
+                <strong>{selected.title}</strong>
+              </div>
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -318,7 +334,7 @@ export default function PainelPage() {
               >
                 Trocar de obra
               </button>
-            </p>
+            </div>
             <form onSubmit={submitCreate}>
               <div className="panel-form-grid">
                 <div className="field">
@@ -413,25 +429,34 @@ export default function PainelPage() {
             {importError && <p className="feedback-error">{importError}</p>}
             {searchError && <p className="feedback-error">{searchError}</p>}
             {results && results.length > 0 && (
-              <ul className="panel-results">
+              <ul className="artwork-grid">
                 {results.map((artwork) => (
-                  <li key={artwork.id} className="panel-result">
-                    <div>
-                      <strong>{artwork.title}</strong>
-                      <div className="muted">
-                        {artwork.description.slice(0, 120)}
-                      </div>
+                  <li key={artwork.id} className="card artwork-card">
+                    <Thumb
+                      src={previewSrc(artwork.image_id)}
+                      alt={artwork.title}
+                      className="artwork-thumb"
+                    />
+                    <div className="artwork-body">
+                      <strong className="artwork-title">
+                        {artwork.title}
+                      </strong>
+                      {artwork.description && (
+                        <div className="muted artwork-desc">
+                          {artwork.description.slice(0, 120)}
+                        </div>
+                      )}
+                      <button
+                        className="btn btn-ghost"
+                        type="button"
+                        disabled={importingId === artwork.id}
+                        onClick={() => void importArtwork(artwork)}
+                      >
+                        {importingId === artwork.id
+                          ? "Importando…"
+                          : "Usar esta obra"}
+                      </button>
                     </div>
-                    <button
-                      className="btn btn-ghost"
-                      type="button"
-                      disabled={importingId === artwork.id}
-                      onClick={() => void importArtwork(artwork)}
-                    >
-                      {importingId === artwork.id
-                        ? "Importando…"
-                        : "Usar esta obra"}
-                    </button>
                   </li>
                 ))}
               </ul>
@@ -497,64 +522,77 @@ export default function PainelPage() {
             <ul className="mine-list">
               {mine.results.map((auction) => (
                 <li key={auction.id} className="mine-row">
-                  <div>
-                    <Link
-                      to={`/lotes/${auction.id}`}
-                      className="mine-title"
-                    >
-                      {auction.item_title}
-                    </Link>
-                    <div className="muted tx-meta">
-                      lote #{auction.id} · {auction.bid_count} lance(s) ·
-                      início {formatDateTime(auction.starts_at)} · fim{" "}
-                      {formatDateTime(auction.ends_at)}
-                    </div>
-                    <div className="muted">{resultLabel(auction)}</div>
-                    {cancelError && confirmingId === auction.id && (
-                      <p className="feedback-error">{cancelError}</p>
-                    )}
-                    {scheduleError && editingId === auction.id && (
-                      <p className="feedback-error">{scheduleError}</p>
-                    )}
-                    {editingId === auction.id && (
-                      <div className="panel-editor">
-                        <input
-                          className="input"
-                          type="datetime-local"
-                          aria-label="Novo início"
-                          value={editStart}
-                          onChange={(event) => {
-                            setEditStart(event.target.value);
-                            setScheduleError(null);
-                          }}
-                        />
-                        <input
-                          className="input"
-                          type="datetime-local"
-                          aria-label="Novo fim"
-                          value={editEnd}
-                          onChange={(event) => {
-                            setEditEnd(event.target.value);
-                            setScheduleError(null);
-                          }}
-                        />
-                        <button
-                          className="btn"
-                          type="button"
-                          disabled={savingSchedule}
-                          onClick={() => void saveSchedule(auction.id)}
-                        >
-                          {savingSchedule ? "Salvando…" : "Salvar"}
-                        </button>
-                        <button
-                          className="btn btn-ghost"
-                          type="button"
-                          onClick={() => setEditingId(null)}
-                        >
-                          Fechar
-                        </button>
+                  <div className="mine-main">
+                    <Thumb
+                      src={
+                        auction.item_image_url
+                          ? apiUrl(
+                              `/api/catalog/image/${auction.item_id}/`,
+                            )
+                          : null
+                      }
+                      alt={auction.item_title}
+                      className="mine-thumb"
+                    />
+                    <div>
+                      <Link
+                        to={`/lotes/${auction.id}`}
+                        className="mine-title"
+                      >
+                        {auction.item_title}
+                      </Link>
+                      <div className="muted tx-meta">
+                        lote #{auction.id} · {auction.bid_count} lance(s) ·
+                        início {formatDateTime(auction.starts_at)} · fim{" "}
+                        {formatDateTime(auction.ends_at)}
                       </div>
-                    )}
+                      <div className="muted">{resultLabel(auction)}</div>
+                      {cancelError && confirmingId === auction.id && (
+                        <p className="feedback-error">{cancelError}</p>
+                      )}
+                      {scheduleError && editingId === auction.id && (
+                        <p className="feedback-error">{scheduleError}</p>
+                      )}
+                      {editingId === auction.id && (
+                        <div className="panel-editor">
+                          <input
+                            className="input"
+                            type="datetime-local"
+                            aria-label="Novo início"
+                            value={editStart}
+                            onChange={(event) => {
+                              setEditStart(event.target.value);
+                              setScheduleError(null);
+                            }}
+                          />
+                          <input
+                            className="input"
+                            type="datetime-local"
+                            aria-label="Novo fim"
+                            value={editEnd}
+                            onChange={(event) => {
+                              setEditEnd(event.target.value);
+                              setScheduleError(null);
+                            }}
+                          />
+                          <button
+                            className="btn"
+                            type="button"
+                            disabled={savingSchedule}
+                            onClick={() => void saveSchedule(auction.id)}
+                          >
+                            {savingSchedule ? "Salvando…" : "Salvar"}
+                          </button>
+                          <button
+                            className="btn btn-ghost"
+                            type="button"
+                            onClick={() => setEditingId(null)}
+                          >
+                            Fechar
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="mine-right">
                     <StatusBadge status={auction.status} />

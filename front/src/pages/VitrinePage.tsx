@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { Auction, Paginated } from "../api/types";
@@ -31,6 +31,16 @@ export default function VitrinePage() {
   const [data, setData] = useState<Paginated<Auction> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const qRef = useRef<HTMLInputElement>(null);
+  const openerRef = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
+
+  const activeCount =
+    (filters.q ? 1 : 0) +
+    (filters.min ? 1 : 0) +
+    (filters.max ? 1 : 0) +
+    (ordering !== "ends_at" ? 1 : 0);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -70,6 +80,15 @@ export default function VitrinePage() {
     };
   }, [status, ordering, page, filters, refresh]);
 
+  useEffect(() => {
+    if (sheetOpen) {
+      qRef.current?.focus();
+    } else if (wasOpen.current) {
+      openerRef.current?.focus();
+    }
+    wasOpen.current = sheetOpen;
+  }, [sheetOpen]);
+
   function selectStatus(value: string) {
     setStatus(value);
     setPage(1);
@@ -87,18 +106,37 @@ export default function VitrinePage() {
     setLoading(true);
   }
 
-  function applyFilters(event: FormEvent<HTMLFormElement>) {
+  function applyFilters(event: FormEvent<HTMLFormElement>): boolean {
     event.preventDefault();
     const min = minPrice.trim() ? parseBrlToCents(minPrice) : null;
     const max = maxPrice.trim() ? parseBrlToCents(maxPrice) : null;
     if ((minPrice.trim() && min === null) || (maxPrice.trim() && max === null)) {
       setError("Faixa de preço inválida. Use algo como 100,50.");
-      return;
+      return false;
     }
     setError(null);
     setPage(1);
     setLoading(true);
     setFilters({ q: q.trim(), min: minPrice.trim(), max: maxPrice.trim() });
+    return true;
+  }
+
+  function handleApply(event: FormEvent<HTMLFormElement>) {
+    if (applyFilters(event)) {
+      setSheetOpen(false);
+    }
+  }
+
+  function clearFilters() {
+    setQ("");
+    setMinPrice("");
+    setMaxPrice("");
+    setOrdering("ends_at");
+    setError(null);
+    setPage(1);
+    setLoading(true);
+    setFilters(EMPTY_FILTERS);
+    setSheetOpen(false);
   }
 
   function retry() {
@@ -123,59 +161,133 @@ export default function VitrinePage() {
         ))}
       </div>
 
-      <form className="filters" onSubmit={applyFilters}>
-        <input
-          className="input"
-          type="search"
-          placeholder="Buscar por título…"
-          aria-label="Buscar lotes"
-          value={q}
-          onChange={(event) => setQ(event.target.value)}
-        />
-        <input
-          className="input"
-          inputMode="decimal"
-          placeholder="Mín. (R$)"
-          aria-label="Preço mínimo"
-          value={minPrice}
-          onChange={(event) => setMinPrice(event.target.value)}
-        />
-        <input
-          className="input"
-          inputMode="decimal"
-          placeholder="Máx. (R$)"
-          aria-label="Preço máximo"
-          value={maxPrice}
-          onChange={(event) => setMaxPrice(event.target.value)}
-        />
-        <select
-          className="select"
-          aria-label="Ordenação"
-          value={ordering}
-          onChange={(event) => changeOrdering(event.target.value)}
+      <div className="vitrine-controls" data-open={sheetOpen}>
+        <button
+          type="button"
+          className="search-trigger"
+          aria-expanded={sheetOpen}
+          aria-controls="filtros-sheet"
+          onClick={(event) => {
+            openerRef.current = event.currentTarget;
+            setSheetOpen(true);
+          }}
         >
-          <option value="ends_at">Termina primeiro</option>
-          <option value="-ends_at">Termina por último</option>
-          <option value="starting_bid_cents">Menor lance inicial</option>
-          <option value="-starting_bid_cents">Maior lance inicial</option>
-        </select>
-        <button className="btn" type="submit">
-          Buscar
+          🔍 {filters.q ? `“${filters.q}”` : "Buscar por título…"}
         </button>
-      </form>
+        <button
+          type="button"
+          className="btn filters-btn"
+          aria-expanded={sheetOpen}
+          aria-controls="filtros-sheet"
+          onClick={(event) => {
+            openerRef.current = event.currentTarget;
+            setSheetOpen(true);
+          }}
+        >
+          ⚙ Filtros
+          {activeCount > 0 && (
+            <span className="filter-count">{activeCount}</span>
+          )}
+        </button>
 
-      {error && (
-        <p className="feedback-error">
-          {error}{" "}
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={retry}
+        <form
+          id="filtros-sheet"
+          className="filters"
+          data-open={sheetOpen}
+          onSubmit={handleApply}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setSheetOpen(false);
+            }
+          }}
+        >
+          <h2 className="sheet-title">
+            Filtros
+            <button
+              type="button"
+              className="sheet-close"
+              aria-label="Fechar filtros"
+              onClick={() => setSheetOpen(false)}
+            >
+              ✕
+            </button>
+          </h2>
+          <input
+            ref={qRef}
+            className="input"
+            type="search"
+            placeholder="Buscar por título…"
+            aria-label="Buscar lotes"
+            value={q}
+            onChange={(event) => setQ(event.target.value)}
+          />
+          <div className="price-row">
+            <input
+              className="input"
+              inputMode="decimal"
+              placeholder="Mín. (R$)"
+              aria-label="Preço mínimo"
+              value={minPrice}
+              onChange={(event) => setMinPrice(event.target.value)}
+            />
+            <input
+              className="input"
+              inputMode="decimal"
+              placeholder="Máx. (R$)"
+              aria-label="Preço máximo"
+              value={maxPrice}
+              onChange={(event) => setMaxPrice(event.target.value)}
+            />
+          </div>
+          <select
+            className="select"
+            aria-label="Ordenação"
+            value={ordering}
+            onChange={(event) => changeOrdering(event.target.value)}
           >
-            Tentar de novo
+            <option value="ends_at">Termina primeiro</option>
+            <option value="-ends_at">Termina por último</option>
+            <option value="starting_bid_cents">Menor lance inicial</option>
+            <option value="-starting_bid_cents">Maior lance inicial</option>
+          </select>
+          <button className="btn filters-submit" type="submit">
+            Buscar
           </button>
-        </p>
-      )}
+          {error && <p className="feedback-error sheet-error">{error}</p>}
+          <div className="sheet-actions">
+            <button
+              className="btn btn-ghost sheet-clear"
+              type="button"
+              onClick={clearFilters}
+            >
+              Limpar
+            </button>
+            <button className="btn sheet-apply" type="submit">
+              Aplicar filtros
+            </button>
+          </div>
+        </form>
+
+        <div
+          className="sheet-backdrop"
+          data-open={sheetOpen}
+          aria-hidden="true"
+          onClick={() => setSheetOpen(false)}
+        />
+
+        {error && (
+          <p className="feedback-error">
+            {error}{" "}
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={retry}
+            >
+              Tentar de novo
+            </button>
+          </p>
+        )}
+      </div>
 
       {loading ? (
         <p className="empty-state">Carregando lotes…</p>

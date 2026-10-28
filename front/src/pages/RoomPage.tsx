@@ -297,7 +297,7 @@ export default function RoomPage() {
 
   return (
     <section className="room">
-      <div className="room-head card">
+      <div className="card">
         <div className="auction-card-head">
           <h1>{detail.item_title}</h1>
           <StatusBadge status={status} />
