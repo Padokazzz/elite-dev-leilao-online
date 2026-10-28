@@ -114,6 +114,19 @@ h1 {
   border-color: var(--border);
 }
 
+.menu-toggle {
+  display: none;
+}
+
+.menu-mobile {
+  display: none;
+}
+
+.link-touch {
+  display: inline-block;
+  padding: 0.75rem 0;
+}
+
 .input,
 .select {
   width: 100%;
@@ -297,8 +310,79 @@ h1 {
   }
 
   .topbar {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 0.75rem;
+    padding: 0.65rem 1rem;
+  }
+
+  .nav {
+    display: none;
+  }
+
+  .theme-toggle,
+  .menu-toggle {
+    margin-left: auto;
+    padding: 0.55rem 0.8rem;
+  }
+
+  .theme-toggle + .menu-toggle {
+    margin-left: 0;
+  }
+
+  .menu-toggle {
+    display: inline-flex;
+  }
+
+  .menu-mobile {
+    display: flex;
+    flex-direction: column;
+    padding: 0.25rem 1rem 0.75rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .menu-mobile > *:not(:last-child) {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .menu-mobile a,
+  .menu-mobile-item {
+    display: flex;
+    align-items: center;
+    min-height: 48px;
+    padding: 0 0.5rem;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 1rem;
+    font-weight: 600;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .menu-mobile a.active {
+    color: var(--accent);
+  }
+
+  .input,
+  .select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .btn {
+    min-height: 44px;
+  }
+
+  .tab {
+    min-height: 40px;
+    padding: 0.5rem 1rem;
+  }
+
+  .pagination {
+    flex-wrap: wrap;
+    justify-content: center;
   }
 }
 
@@ -488,6 +572,8 @@ h1 {
 }
 
 .mine-title {
+  display: inline-block;
+  padding: 0.3rem 0;
   color: var(--text);
   font-weight: 600;
   text-decoration: none;
@@ -632,6 +718,16 @@ h1 {
   border-color: transparent;
 }
 
+.audit-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.audit-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .audit-table {
   width: 100%;
   border-collapse: collapse;
@@ -642,6 +738,7 @@ h1 {
 .audit-table td {
   text-align: left;
   padding: 0.4rem 0.5rem;
+  white-space: nowrap;
   border-bottom: 1px solid var(--border);
   font-size: 0.9rem;
 }

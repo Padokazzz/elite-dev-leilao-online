@@ -72,7 +72,10 @@ export default function LoginPage() {
           {busy ? "Entrando…" : "Entrar"}
         </button>
         <p className="muted" style={{ marginBottom: 0 }}>
-          Ainda não tem conta? <Link to="/registrar">Criar conta</Link>
+          Ainda não tem conta?{" "}
+          <Link className="link-touch" to="/registrar">
+            Criar conta
+          </Link>
         </p>
       </form>
     </section>

@@ -126,34 +126,45 @@ export default function AuditPage() {
           {report.chain.length === 0 ? (
             <p className="muted">Nenhum lance registrado neste lote.</p>
           ) : (
-            <table className="audit-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Valor</th>
-                  <th>Momento</th>
-                  <th>Licitante</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.chain.map((row) => (
-                  <tr
-                    key={row.seq}
-                    className={
-                      report.tampered?.seq === row.seq ? "audit-bad" : undefined
-                    }
-                  >
-                    <td>{row.seq}</td>
-                    <td>{formatCents(row.amount_cents)}</td>
-                    <td>{formatDateTime(row.accepted_at)}</td>
-                    <td>{row.bidder}</td>
+            <div
+              className="audit-scroll"
+              role="region"
+              aria-label="Cadeia de lances do lote"
+              tabIndex={0}
+            >
+              <table className="audit-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Valor</th>
+                    <th>Momento</th>
+                    <th>Licitante</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {report.chain.map((row) => (
+                    <tr
+                      key={row.seq}
+                      className={
+                        report.tampered?.seq === row.seq
+                          ? "audit-bad"
+                          : undefined
+                      }
+                    >
+                      <td>{row.seq}</td>
+                      <td>{formatCents(row.amount_cents)}</td>
+                      <td>{formatDateTime(row.accepted_at)}</td>
+                      <td>{row.bidder}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           <p className="muted" style={{ marginTop: "0.5rem" }}>
-            <Link to={`/lotes/${report.auction_id}`}>Ver o lote</Link>
+            <Link className="link-touch" to={`/lotes/${report.auction_id}`}>
+              Ver o lote
+            </Link>
           </p>
         </div>
       )}
