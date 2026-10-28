@@ -20,6 +20,7 @@ export type Auction = {
   seller_pseudonym: string;
   item_id: number;
   item_title: string;
+  item_image_url?: string | null;
   starting_bid_cents: number;
   minimum_increment_cents: number;
   starts_at: string;

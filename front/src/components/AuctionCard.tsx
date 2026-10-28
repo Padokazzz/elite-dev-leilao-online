@@ -7,6 +7,18 @@ import StatusBadge from "./StatusBadge";
 export default function AuctionCard({ auction }: { auction: Auction }) {
   return (
     <Link to={`/lotes/${auction.id}`} className="card auction-card">
+      {auction.item_image_url ? (
+        <img
+          className="auction-thumb"
+          src={auction.item_image_url}
+          alt={auction.item_title}
+          loading="lazy"
+        />
+      ) : (
+        <div className="auction-thumb placeholder" aria-hidden="true">
+          {auction.item_title.charAt(0).toUpperCase()}
+        </div>
+      )}
       <div className="auction-card-head">
         <h2>{auction.item_title}</h2>
         <StatusBadge status={auction.status} />
