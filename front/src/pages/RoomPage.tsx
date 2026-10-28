@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, ApiError } from "../api/client";
+import { api, apiUrl, ApiError } from "../api/client";
 import type {
-  Auction,
+  AuctionDetail,
   AuctionStatus,
   BidRow,
   BidsResponse,
@@ -11,6 +11,7 @@ import type {
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import StatusBadge from "../components/StatusBadge";
+import Thumb from "../components/Thumb";
 import useAuctionRoom from "../hooks/useAuctionRoom";
 import useCountdown from "../hooks/useCountdown";
 import { formatDateTime, formatRemaining, formatTime } from "../lib/datetime";
@@ -32,7 +33,7 @@ export default function RoomPage() {
   const invalidId = !Number.isFinite(id) || id <= 0;
   const live = useAuctionRoom(id, Boolean(user));
 
-  const [detail, setDetail] = useState<Auction | null>(null);
+  const [detail, setDetail] = useState<AuctionDetail | null>(null);
   const [restBids, setRestBids] = useState<BidRow[]>([]);
   const [localBids, setLocalBids] = useState<BidRow[]>([]);
   const [localApplied, setLocalApplied] = useState<AppliedBid | null>(null);
@@ -52,7 +53,7 @@ export default function RoomPage() {
     let cancelled = false;
 
     api
-      .get<Auction>(`/api/auctions/${id}/`, false)
+      .get<AuctionDetail>(`/api/auctions/${id}/`, false)
       .then((data) => {
         if (!cancelled) {
           setDetail(data);
@@ -157,6 +158,20 @@ export default function RoomPage() {
     baseStatus === "scheduled" && untilStart !== null && untilStart <= 0
       ? "live"
       : baseStatus;
+
+  // Ficha da obra (vem só no detalhe; a lista não traz estes campos).
+  const attrs = detail?.item_attributes;
+  const artist =
+    typeof attrs?.artist === "string" && attrs.artist !== ""
+      ? attrs.artist
+      : "";
+  const sourceUrl =
+    typeof attrs?.source_url === "string" && attrs.source_url !== ""
+      ? attrs.source_url
+      : "";
+  const metaFacts = [attrs?.date, attrs?.medium, attrs?.dimensions].filter(
+    (value): value is string => typeof value === "string" && value !== "",
+  );
 
   const newestWs = live.bidEvents[live.bidEvents.length - 1] ?? null;
   const topSource =
@@ -298,9 +313,41 @@ export default function RoomPage() {
   return (
     <section className="room">
       <div className="card">
-        <div className="auction-card-head">
-          <h1>{detail.item_title}</h1>
-          <StatusBadge status={status} />
+        <div className="room-art">
+          <Thumb
+            src={
+              detail.item_image_url
+                ? apiUrl(`/api/catalog/image/${detail.item_id}/`)
+                : null
+            }
+            alt={detail.item_title}
+            className="room-art-thumb"
+          />
+          <div className="room-art-info">
+            {artist !== "" && (
+              <div className="room-art-artist">{artist}</div>
+            )}
+            <div className="auction-card-head">
+              <h1>{detail.item_title}</h1>
+              <StatusBadge status={status} />
+            </div>
+            {metaFacts.length > 0 && (
+              <p className="room-art-meta">{metaFacts.join(" · ")}</p>
+            )}
+            {detail.item_description && (
+              <p className="room-art-desc">{detail.item_description}</p>
+            )}
+            {sourceUrl !== "" && (
+              <a
+                className="room-art-source link-touch"
+                href={sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ver ficha original ↗
+              </a>
+            )}
+          </div>
         </div>
         <p className="muted">
           Leiloeiro: {detail.seller_pseudonym} · lance inicial{" "}

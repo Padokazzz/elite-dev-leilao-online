@@ -30,6 +30,20 @@ export type Auction = {
   receipt_public_uuid?: string | null;
 };
 
+/** Detalhe do lote (/api/auctions/<id>/) inclui a ficha da obra. */
+export type AuctionDetail = Auction & {
+  item_description?: string | null;
+  item_attributes?: {
+    artist?: string;
+    date?: string;
+    medium?: string;
+    dimensions?: string;
+    is_public_domain?: boolean;
+    source_url?: string;
+    [key: string]: string | boolean | undefined;
+  } | null;
+};
+
 export type Paginated<T> = {
   count: number;
   next: string | null;
