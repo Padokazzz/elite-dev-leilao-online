@@ -183,8 +183,10 @@ class SettlementTests(APITestCase):
         self._expire(self.auction)
         self._expire(healthy)
 
-        count = settle_expired_auctions()
+        with patch("auctions.services.logger") as logger:
+            count = settle_expired_auctions()
 
+        logger.exception.assert_called()
         self.assertEqual(count, 1)
         self.auction.refresh_from_db()
         healthy.refresh_from_db()
@@ -197,6 +199,7 @@ class SettlementTests(APITestCase):
         previous_term = signal.getsignal(signal.SIGTERM)
         previous_int = signal.getsignal(signal.SIGINT)
         stderr = StringIO()
+        stdout = StringIO()
 
         try:
             with patch(
@@ -209,7 +212,10 @@ class SettlementTests(APITestCase):
             ) as tick:
                 with self.assertRaises(KeyboardInterrupt):
                     call_command(
-                        "settle_auctions_loop", interval=0, stderr=stderr
+                        "settle_auctions_loop",
+                        interval=0,
+                        stderr=stderr,
+                        stdout=stdout,
                     )
         finally:
             signal.signal(signal.SIGTERM, previous_term)
@@ -217,6 +223,7 @@ class SettlementTests(APITestCase):
 
         self.assertEqual(tick.call_count, 2)
         self.assertIn("falha na rodada", stderr.getvalue())
+        self.assertIn("worker de liquidação ativo", stdout.getvalue())
 
 
 class ConcurrentSettlementTests(TransactionTestCase):
