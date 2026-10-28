@@ -174,6 +174,26 @@ export type Receipt = {
   seller: string;
 };
 
+export type AuditRow = {
+  seq: number;
+  amount_cents: number;
+  accepted_at: string;
+  bidder: string;
+};
+
+export type AuditTamper = {
+  seq: number;
+  reason: "sequence_gap" | "prev_hash_mismatch" | "hash_mismatch";
+  expected_seq?: number;
+};
+
+export type AuditReport = {
+  auction_id: number;
+  intact: boolean;
+  chain: AuditRow[];
+  tampered: AuditTamper | null;
+};
+
 export type ApiErrorBody = {
   code?: string;
   detail?: string | string[];

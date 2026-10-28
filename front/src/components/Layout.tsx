@@ -17,6 +17,7 @@ export default function Layout() {
           <NavLink to="/" end>
             Vitrine
           </NavLink>
+          <NavLink to="/auditoria">Auditoria</NavLink>
           {user && <NavLink to="/meus-lances">Meus lances</NavLink>}
           {user && <NavLink to="/carteira">Carteira</NavLink>}
           {user?.role === "auctioneer" && (

@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
 import Layout from "./components/Layout";
+import AuditPage from "./pages/AuditPage";
 import LoginPage from "./pages/LoginPage";
 import MyBidsPage from "./pages/MyBidsPage";
 import PainelPage from "./pages/PainelPage";
@@ -17,6 +18,7 @@ export default function App() {
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<VitrinePage />} />
+            <Route path="/auditoria" element={<AuditPage />} />
             <Route path="/entrar" element={<LoginPage />} />
             <Route path="/registrar" element={<RegisterPage />} />
             <Route path="/carteira" element={<WalletPage />} />
