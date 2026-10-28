@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (testes)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: leilao_ci
+          POSTGRES_USER: leilao
+          POSTGRES_PASSWORD: leilao
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # O settings exige DJANGO_SECRET_KEY; REDIS_URL vazio usa o channel
+      # layer em memória fora de dev e o in-memory nos testes.
+      DJANGO_SECRET_KEY: ci-not-a-real-secret
+      ALLOWED_HOSTS: localhost,testserver
+      DB_NAME: leilao_ci
+      DB_USER: leilao
+      DB_PASSWORD: leilao
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      AUDIT_PSEUDO_SECRET: ci-pseudo-secret
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Rodar suíte
+        run: python manage.py test --noinput
+
+  front:
+    name: Front (build + lint + testes)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: front
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: front/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Build de produção
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Testes
+        run: npm run test

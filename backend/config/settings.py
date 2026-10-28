@@ -72,6 +72,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Serve os arquivos coletados (collectstatic) sem depender do
+    # Django em produção — obrigatório no Render.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware", 
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -151,6 +154,13 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"
+    },
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -166,12 +176,26 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    # Limite global de abuso (anon/autenticado) em TODO endpoint que não
+    # define throttle próprio. Desligado na suíte — a contagem cumulativa
+    # de centenas de testes esbarraria no teto; o comportamento é coberto
+    # por teste dedicado com override_settings.
+    "DEFAULT_THROTTLE_CLASSES": (
+        []
+        if "test" in sys.argv
+        else [
+            "rest_framework.throttling.AnonRateThrottle",
+            "rest_framework.throttling.UserRateThrottle",
+        ]
+    ),
     "DEFAULT_THROTTLE_RATES": {
         "auth_login": "5/min",
         "auth_register": "5/min",
         "catalog_search": "30/min",
         "wallet_deposit": "30/min",
         "bid_place": "60/min",
+        "anon": os.getenv("THROTTLE_ANON", "120/min"),
+        "user": os.getenv("THROTTLE_USER", "1200/min"),
     },
     "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "1")),
 }
