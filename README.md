@@ -13,7 +13,8 @@ guia de setup, execução, decisões técnicas e entrega.
 | :--- | :--- |
 | Backend (Django + DRF + Channels) | ✅ Completo — 195 testes |
 | Front-end — telas core | ✅ Vitrine, sala ao vivo, carteira, meus lances, comprovantes, auth, dark mode |
-| Front-end — painel do leiloeiro, auditoria pública, polimento | ⬜ Próxima etapa |
+| Front-end — painel do leiloeiro | ✅ Busca/importação de catálogo, criar, programar, cancelar, resultado por lote e total recebido |
+| Front-end — auditoria pública | ✅ Verificação de cadeia por lote, com deep link e cross-link do comprovante |
 | Infraestrutura | ✅ Docker Compose (Postgres, Redis, API, worker) · ⬜ CI, throttles globais, whitenoise |
 | Deploy | ⬜ Previsto: Render + Neon + Vercel (§4 do PLANO) |
 
@@ -53,8 +54,10 @@ preço, ordenação, filtro de status e paginação.
 
 **Front-end (React 19 + Vite + TypeScript, sem UI kit)** — rotas `/`,
 `/entrar`, `/registrar`, `/carteira`, `/meus-lances`,
-`/comprovantes/:uuid`, `/lotes/:id`; dark mode com variáveis CSS e
-script anti-flash; estados de loading/vazio/erro em todas as telas.
+`/comprovantes/:uuid`, `/lotes/:id`, `/painel` (leiloeiro) e
+`/auditoria` (pública); dark mode com variáveis CSS e script
+anti-flash; estados de loading/vazio/erro em todas as telas; login
+volta para a página de origem.
 
 ## Como executar
 
