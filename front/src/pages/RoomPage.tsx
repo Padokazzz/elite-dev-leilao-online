@@ -52,7 +52,7 @@ export default function RoomPage() {
     let cancelled = false;
 
     api
-      .get<Auction>(`/api/auctions/${id}/`)
+      .get<Auction>(`/api/auctions/${id}/`, false)
       .then((data) => {
         if (!cancelled) {
           setDetail(data);

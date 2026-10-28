@@ -46,7 +46,7 @@ export default function VitrinePage() {
     let cancelled = false;
 
     api
-      .get<Paginated<Auction>>(`/api/auctions/?${params.toString()}`)
+      .get<Paginated<Auction>>(`/api/auctions/?${params.toString()}`, false)
       .then((result) => {
         if (!cancelled) {
           setData(result);
@@ -188,7 +188,7 @@ export default function VitrinePage() {
           </div>
           <Pagination
             page={page}
-            hasPrev={page > 1}
+            hasPrev={data.previous !== null}
             hasNext={data.next !== null}
             onPage={goToPage}
           />

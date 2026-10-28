@@ -184,6 +184,7 @@ export default function WalletPage() {
               onChange={(event) => {
                 setAmount(event.target.value);
                 setDepositError(null);
+                setNotice(null);
               }}
             />
           </div>
