@@ -222,11 +222,13 @@ export default function WalletPage() {
                   </div>
                 </div>
                 <div className="tx-amounts">
-                  <span
-                    className={row.delta_cents >= 0 ? "pos" : "neg"}
-                  >
-                    {formatSignedCents(row.delta_cents)}
-                  </span>
+                  {row.delta_cents !== 0 && (
+                    <span
+                      className={row.delta_cents >= 0 ? "pos" : "neg"}
+                    >
+                      {formatSignedCents(row.delta_cents)}
+                    </span>
+                  )}
                   {row.committed_delta_cents !== 0 && (
                     <span className="muted">
                       comprometido{" "}
