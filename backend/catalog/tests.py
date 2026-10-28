@@ -51,7 +51,8 @@ class CatalogEndpointTests(APITestCase):
                 "id": "123",
                 "title": "Artwork Example",
                 "description": "",
-                "image_url": "",
+                "image_url": "https://example.com/artwork.jpg",
+                "image_id": "abc-123",
                 "attributes": {"artist": "Unknown"},
             }
         ]
@@ -66,6 +67,10 @@ class CatalogEndpointTests(APITestCase):
         self.assertEqual(
             response.data["results"][0]["title"],
             "Artwork Example",
+        )
+        self.assertEqual(
+            response.data["results"][0]["image_id"],
+            "abc-123",
         )
         mock_search.assert_called_once_with(query="painting", limit=5)
 
@@ -251,6 +256,7 @@ class ArtworkServiceTests(APITestCase):
             result["image_url"],
             "https://www.artic.edu/iiif/2/abc-123/full/843,/0/default.jpg",
         )
+        self.assertEqual(result["image_id"], "abc-123")
         self.assertTrue(result["attributes"]["is_public_domain"])
 
     def test_normalize_artwork_rejects_invalid_identifier(self):
@@ -268,6 +274,25 @@ class ArtworkServiceTests(APITestCase):
         })
 
         self.assertEqual(result["image_url"], "")
+        self.assertEqual(result["image_id"], "")
+
+    def test_normalize_artwork_strips_html_from_description(self):
+        result = _normalize_artwork({
+            "id": 123,
+            "title": "Artwork",
+            "description": (
+                "<p>In <em>Ferris Bueller's Day Off</em>, "
+                "the artist &amp; friends &hellip;</p>\n"
+                "<p>A second paragraph.</p>"
+            ),
+        })
+
+        self.assertEqual(
+            result["description"],
+            "In Ferris Bueller's Day Off, the artist & friends … "
+            "A second paragraph.",
+        )
+        self.assertNotIn("<", result["description"])
 
     @patch("catalog.services.urlopen")
     def test_request_json_rejects_oversized_response(self, mock_urlopen):
@@ -326,5 +351,42 @@ class ArtworkImageViewTests(APITestCase):
         )
 
         response = self.client.get(f"/api/catalog/image/{item.pk}/")
+
+        self.assertEqual(response.status_code, 502)
+
+
+class ArtworkPreviewImageViewTests(APITestCase):
+    @patch("catalog.views.fetch_artwork_image")
+    def test_serves_preview_for_valid_image_id(self, mock_fetch):
+        mock_fetch.return_value = ("image/jpeg", b"\xff\xd8\xff\xe0fake")
+
+        response = self.client.get(
+            "/api/catalog/preview/abc-123/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/jpeg")
+        self.assertEqual(response.content, b"\xff\xd8\xff\xe0fake")
+        self.assertEqual(response["Cache-Control"], "public, max-age=86400")
+        mock_fetch.assert_called_once_with(
+            "https://www.artic.edu/iiif/2/abc-123/full/400,/0/default.jpg"
+        )
+
+    def test_rejects_image_id_with_unsafe_characters(self):
+        for bad_id in ("a b", "a.b", "ab%2Fcd", "x" * 101):
+            with self.subTest(image_id=bad_id):
+                response = self.client.get(
+                    f"/api/catalog/preview/{bad_id}/"
+                )
+
+                self.assertEqual(response.status_code, 404)
+
+    @patch("catalog.views.fetch_artwork_image")
+    def test_returns_502_when_upstream_fails(self, mock_fetch):
+        mock_fetch.side_effect = ArtworkAPIError("rede")
+
+        response = self.client.get(
+            "/api/catalog/preview/abc-123/"
+        )
 
         self.assertEqual(response.status_code, 502)

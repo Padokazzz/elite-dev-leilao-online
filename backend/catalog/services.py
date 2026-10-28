@@ -1,7 +1,10 @@
+import html
 import json
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+from django.utils.html import strip_tags
 
 
 API_BASE_URL = "https://api.artic.edu/api/v1"
@@ -51,6 +54,14 @@ def _request_json(url):
 
 
 
+def iiif_image_url(image_id, size=843):
+    """Monta a URL oficial IIIF do ArtIC para um image_id validado."""
+    return (
+        "https://www.artic.edu/iiif/2/"
+        f"{image_id}/full/{size},/0/default.jpg"
+    )
+
+
 def _normalize_artwork(artwork):
     if not isinstance(artwork, dict):
         raise ArtworkAPIError("A API retornou uma obra inválida.")
@@ -71,6 +82,7 @@ def _normalize_artwork(artwork):
 
     image_id = artwork.get("image_id")
     image_url = ""
+    safe_image_id = ""
 
     if (
         isinstance(image_id, str)
@@ -80,16 +92,25 @@ def _normalize_artwork(artwork):
         and "\\" not in image_id
         and not any(char.isspace() for char in image_id)
     ):
-        image_url = (
-            "https://www.artic.edu/iiif/2/"
-            f"{image_id}/full/843,/0/default.jpg"
-        )
+        safe_image_id = image_id
+        image_url = iiif_image_url(image_id)
+
+    # O ArtIC devolve descrição em HTML (<p>, <em>…); o contrato do
+    # nosso campo é texto puro — remove as tags, resolve entidades
+    # (&amp;, &hellip;) e normaliza espaços.
+    raw_description = artwork.get("description") or ""
+    if not isinstance(raw_description, str):
+        raw_description = ""
+    description = " ".join(
+        html.unescape(strip_tags(raw_description)).split()
+    )
 
     return {
         "id": str(artwork_id),
         "title": title.strip(),
-        "description": artwork.get("description") or "",
+        "description": description,
         "image_url": image_url,
+        "image_id": safe_image_id,
         "attributes": {
             "artist": artwork.get("artist_display") or "Artista desconhecido",
             "date": artwork.get("date_display") or "",

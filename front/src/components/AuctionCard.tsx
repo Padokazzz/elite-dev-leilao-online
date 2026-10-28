@@ -1,30 +1,23 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
 import { apiUrl } from "../api/client";
 import type { Auction } from "../api/types";
 import { formatDateTime } from "../lib/datetime";
 import { formatCents } from "../lib/money";
 import StatusBadge from "./StatusBadge";
+import Thumb from "./Thumb";
 
 export default function AuctionCard({ auction }: { auction: Auction }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const showImage = Boolean(auction.item_image_url) && !imageFailed;
-
   return (
     <Link to={`/lotes/${auction.id}`} className="card auction-card">
-      {showImage ? (
-        <img
-          className="auction-thumb"
-          src={apiUrl(`/api/catalog/image/${auction.item_id}/`)}
-          alt={auction.item_title}
-          loading="lazy"
-          onError={() => setImageFailed(true)}
-        />
-      ) : (
-        <div className="auction-thumb placeholder" aria-hidden="true">
-          {auction.item_title.charAt(0).toUpperCase()}
-        </div>
-      )}
+      <Thumb
+        src={
+          auction.item_image_url
+            ? apiUrl(`/api/catalog/image/${auction.item_id}/`)
+            : null
+        }
+        alt={auction.item_title}
+        className="auction-thumb"
+      />
       <div className="auction-card-head">
         <h2>{auction.item_title}</h2>
         <StatusBadge status={auction.status} />

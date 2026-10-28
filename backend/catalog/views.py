@@ -15,6 +15,7 @@ from .services import (
     ArtworkAPIError,
     fetch_artwork_image,
     get_artwork,
+    iiif_image_url,
     search_artworks,
 )
 
@@ -122,6 +123,50 @@ class ArtworkImageView(APIView):
 
         try:
             content_type, data = fetch_artwork_image(item.image_url)
+        except ArtworkAPIError:
+            return Response(
+                {"detail": "Imagem indisponível no catálogo externo."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        response = HttpResponse(data, content_type=content_type)
+        response["Cache-Control"] = "public, max-age=86400"
+        return response
+
+
+def _is_safe_image_id(image_id: str) -> bool:
+    """Só aceita o formato do image_id do ArtIC (UUID): ASCII sem espaços.
+
+    A URL final é montada pelo servidor, nunca aceitada do cliente,
+    então o id não pode injetar caminho nem host.
+    """
+    return 0 < len(image_id) <= 100 and all(
+        char.isascii() and (char.isalnum() or char in "-_")
+        for char in image_id
+    )
+
+
+class ArtworkPreviewImageView(APIView):
+    """Serve a miniatura de uma obra do catálogo que ainda não foi importada.
+
+    O ArtIC bloqueia hotlink (403 para qualquer navegador), então a
+    prévia precisa passar por um proxy — este, chaveado pelo image_id
+    da busca, em vez do item_id que só existe após a importação.
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, image_id: str):
+        if not _is_safe_image_id(image_id):
+            return Response(
+                {"detail": "Não encontrado."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            content_type, data = fetch_artwork_image(
+                iiif_image_url(image_id, size=400)
+            )
         except ArtworkAPIError:
             return Response(
                 {"detail": "Imagem indisponível no catálogo externo."},
