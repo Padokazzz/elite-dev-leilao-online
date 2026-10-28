@@ -378,3 +378,76 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
+
+.wallet-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  text-align: center;
+}
+
+.wallet-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.wallet-stats .muted {
+  font-size: 0.85rem;
+}
+
+.stat-big {
+  font-size: 1.6rem;
+  color: var(--accent);
+}
+
+.tx-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tx-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tx-row:last-child {
+  border-bottom: none;
+}
+
+.tx-meta {
+  font-size: 0.8rem;
+  margin-top: 0.15rem;
+}
+
+.tx-amounts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  white-space: nowrap;
+}
+
+.tx-amounts .muted {
+  font-size: 0.8rem;
+}
+
+.pos {
+  color: var(--live);
+  font-weight: 700;
+}
+
+.neg {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .wallet-stats {
+    grid-template-columns: 1fr;
+  }
+}

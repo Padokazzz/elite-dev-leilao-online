@@ -83,6 +83,10 @@ export type WalletTransactionRow = {
   created_at: string;
 };
 
+export type TransactionsResponse = {
+  results: WalletTransactionRow[];
+};
+
 export type MyBidState = "leading" | "outbid" | "won" | "cancelled";
 
 export type MyBid = {
