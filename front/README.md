@@ -1,32 +1,36 @@
-# React + TypeScript + Vite
+# Casa de Leilões — Front-end
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React 19 + TypeScript + Vite da Casa de Leilões online.
 
-Currently, two official plugins are available:
+## Comandos
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev      # dev server em http://localhost:5173
+npm run build    # typecheck (tsc -b) + build de produção
+npm run lint     # oxlint
+npm run test     # vitest (testes de unidade)
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Configuração
+
+Copie `.env.example` para `.env` e ajuste conforme necessário:
+
+```
+VITE_API_URL=http://localhost:8000
+```
+
+O backend precisa estar no ar (`backend/` neste repositório). Fora de
+desenvolvimento, libere a origem deste front no `CORS_ALLOWED_ORIGINS`
+do backend.
+
+## Estrutura
+
+- `src/api/` — cliente fetch com token e contrato tipado das respostas
+- `src/auth/` — sessão (token, papel leiloeiro/licitante)
+- `src/hooks/` — WebSocket da sala, contagem regressiva
+- `src/pages/` — telas (uma por rota)
+- `src/components/` — card de lote, badges, paginação, layout
+- `src/lib/` — dinheiro em centavos, datas, mensagens de recusa de lance
+- `src/styles/` — tokens claro/escuro e utilitários
+- `src/theme.ts` — alternância de tema (persistida em localStorage)
