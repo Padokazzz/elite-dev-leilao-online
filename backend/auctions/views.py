@@ -83,6 +83,7 @@ def auction_payload(auction: Auction) -> dict:
         "seller_pseudonym": pseudo(auction.seller),
         "item_id": auction.item_id,
         "item_title": auction.item.title,
+        "item_image_url": auction.item.image_url or None,
         "starting_bid_cents": auction.starting_bid_cents,
         "minimum_increment_cents": auction.minimum_increment_cents,
         "starts_at": auction.starts_at.isoformat(),
