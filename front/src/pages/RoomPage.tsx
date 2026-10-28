@@ -142,11 +142,21 @@ export default function RoomPage() {
     };
   }, [user, snapshot, topSeq, id]);
 
-  const status: AuctionStatus = live.cancelled
+  const baseStatus: AuctionStatus = live.cancelled
     ? "cancelled"
     : live.closed
       ? "ended"
       : snapshot?.status ?? detail?.status ?? "scheduled";
+
+  const untilStart = useCountdown(
+    detail?.starts_at ?? null,
+    baseStatus === "scheduled",
+  );
+
+  const status: AuctionStatus =
+    baseStatus === "scheduled" && untilStart !== null && untilStart <= 0
+      ? "live"
+      : baseStatus;
 
   const newestWs = live.bidEvents[live.bidEvents.length - 1] ?? null;
   const topSource =
@@ -177,10 +187,6 @@ export default function RoomPage() {
       : (snapshot?.you_lead ?? false);
 
   const remaining = useCountdown(endsAt, status === "live");
-  const untilStart = useCountdown(
-    detail?.starts_at ?? null,
-    status === "scheduled",
-  );
 
   const extendedNote = Boolean(newestWs?.extended) && status === "live";
 
