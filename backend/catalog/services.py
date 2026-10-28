@@ -177,7 +177,6 @@ def search_artworks(query, limit=10):
     payload = _request_json(url)
 
     data = payload.get("data")
-    config = payload.get("config") or {}
 
     if not isinstance(data, list):
         raise ArtworkAPIError("A API retornou uma lista de obras inválida.")
@@ -198,7 +197,6 @@ def get_artwork(external_id):
     payload = _request_json(url)
 
     artwork = payload.get("data")
-    config = payload.get("config") or {}
 
     if not isinstance(artwork, dict):
         raise ArtworkAPIError("A API não retornou os dados da obra.")
