@@ -569,3 +569,65 @@ h1 {
   justify-content: center;
   margin-top: 0.5rem;
 }
+
+.panel-search {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.panel-search .input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.panel-results {
+  list-style: none;
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.panel-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.panel-actions {
+  display: inline-flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.panel-editor {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #ffffff;
+  border-color: transparent;
+}

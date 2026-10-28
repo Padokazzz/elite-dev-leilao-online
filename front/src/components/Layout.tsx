@@ -19,6 +19,9 @@ export default function Layout() {
           </NavLink>
           {user && <NavLink to="/meus-lances">Meus lances</NavLink>}
           {user && <NavLink to="/carteira">Carteira</NavLink>}
+          {user?.role === "auctioneer" && (
+            <NavLink to="/painel">Painel</NavLink>
+          )}
           {user ? (
             <button
               type="button"

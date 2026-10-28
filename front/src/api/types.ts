@@ -37,6 +37,27 @@ export type Paginated<T> = {
   results: T[];
 };
 
+export type ArtworkSearchResult = {
+  id: string;
+  title: string;
+  description: string;
+  image_url: string;
+};
+
+export type ImportedArtwork = {
+  id: number;
+  title: string;
+  created: boolean;
+};
+
+export type MineAuction = Auction & {
+  received_cents: number | null;
+};
+
+export type MineResponse = Paginated<MineAuction> & {
+  summary: { total_received_cents: number };
+};
+
 export type BidRow = {
   seq: number;
   amount_cents: number;
