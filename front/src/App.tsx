@@ -3,6 +3,7 @@ import { AuthProvider } from "./auth/AuthContext";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import MyBidsPage from "./pages/MyBidsPage";
+import ReceiptPage from "./pages/ReceiptPage";
 import RegisterPage from "./pages/RegisterPage";
 import RoomPage from "./pages/RoomPage";
 import VitrinePage from "./pages/VitrinePage";
@@ -19,6 +20,7 @@ export default function App() {
             <Route path="/registrar" element={<RegisterPage />} />
             <Route path="/carteira" element={<WalletPage />} />
             <Route path="/meus-lances" element={<MyBidsPage />} />
+            <Route path="/comprovantes/:uuid" element={<ReceiptPage />} />
             <Route path="/lotes/:auctionId" element={<RoomPage />} />
           </Route>
         </Routes>

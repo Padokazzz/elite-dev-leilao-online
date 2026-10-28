@@ -160,6 +160,16 @@ export type AuditReport = {
   } | null;
 };
 
+export type Receipt = {
+  public_uuid: string;
+  auction_id: number;
+  item_title: string;
+  amount_cents: number;
+  settled_at: string;
+  winner: string;
+  seller: string;
+};
+
 export type ApiErrorBody = {
   code?: string;
   detail?: string | string[];

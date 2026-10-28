@@ -365,6 +365,16 @@ export default function RoomPage() {
               🏆 <strong>Você arrematou!</strong>
               {live.closed.amount_cents !== null &&
                 ` por ${formatCents(live.closed.amount_cents)}`}
+              {live.closed.receipt_public_uuid && (
+                <>
+                  {" · "}
+                  <Link
+                    to={`/comprovantes/${live.closed.receipt_public_uuid}`}
+                  >
+                    Ver comprovante
+                  </Link>
+                </>
+              )}
             </p>
           ) : (
             <p>

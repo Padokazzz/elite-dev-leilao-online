@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import type { Auction, Paginated } from "../api/types";
 import AuctionCard from "../components/AuctionCard";
+import Pagination from "../components/Pagination";
 import { parseBrlToCents } from "../lib/money";
 
 const TABS = [
@@ -185,25 +186,12 @@ export default function VitrinePage() {
               <AuctionCard key={auction.id} auction={auction} />
             ))}
           </div>
-          <div className="pagination">
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={page <= 1}
-              onClick={() => goToPage(page - 1)}
-            >
-              Anterior
-            </button>
-            <span className="muted">Página {page}</span>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={!data.next}
-              onClick={() => goToPage(page + 1)}
-            >
-              Próxima
-            </button>
-          </div>
+          <Pagination
+            page={page}
+            hasPrev={page > 1}
+            hasNext={data.next !== null}
+            onPage={goToPage}
+          />
         </>
       ) : (
         !error && <p className="empty-state">Nenhum lote encontrado.</p>
