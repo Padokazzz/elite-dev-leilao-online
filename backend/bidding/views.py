@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from auctions.models import Auction
 from auctions.pagination import AuctionPagination
 from auctions.services import settle_if_expired
+from audit.services import pseudo
 from receipts.models import Receipt
 
 from .events import publish_bid_placed
@@ -36,7 +37,11 @@ class AuctionBidsView(APIView):
 
         settle_if_expired(auction)
 
-        bids = Bid.objects.filter(auction_id=auction_id).order_by("-seq")[:50]
+        bids = (
+            Bid.objects.select_related("bidder")
+            .filter(auction_id=auction_id)
+            .order_by("-seq")[:50]
+        )
 
         return Response(
             {
@@ -45,7 +50,9 @@ class AuctionBidsView(APIView):
                         "seq": bid.seq,
                         "amount_cents": bid.amount_cents,
                         "accepted_at": bid.accepted_at,
-                        
+                        # Pseudônimo estável (HMAC) — a identidade real
+                        # nunca sai do back-end.
+                        "bidder_pseudonym": pseudo(bid.bidder),
                         "is_you": bid.bidder_id == request.user.id,
                     }
                     for bid in bids
@@ -75,6 +82,7 @@ class AuctionBidsView(APIView):
         publish_bid_placed(
             auction_id=auction_id,
             bidder_id=request.user.pk,
+            bidder_pseudonym=pseudo(request.user),
             outcome=outcome,
         )
 
@@ -84,6 +92,7 @@ class AuctionBidsView(APIView):
                     "seq": outcome.bid.seq,
                     "amount_cents": outcome.bid.amount_cents,
                     "accepted_at": outcome.bid.accepted_at,
+                    "bidder_pseudonym": pseudo(request.user),
                 },
                 "extended": outcome.extended,
                 "ends_at": outcome.ends_at,

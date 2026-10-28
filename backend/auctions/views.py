@@ -161,7 +161,15 @@ class AuctionManageView(APIView):
         auction = _auction_or_404(auction_id)
         settle_if_expired(auction)
 
-        return Response(auction_payload(auction))
+        return Response(
+            {
+                **auction_payload(auction),
+                # Ficha da obra (descrição + atributos do catálogo) só no
+                # detalhe — a lista continua enxuta.
+                "item_description": auction.item.description or None,
+                "item_attributes": auction.item.attributes or None,
+            }
+        )
 
     def patch(self, request, auction_id):
         auction = _auction_or_404(auction_id)

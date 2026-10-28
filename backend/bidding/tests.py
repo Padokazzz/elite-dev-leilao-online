@@ -523,6 +523,9 @@ class BidEndpointTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["bid"]["seq"], 1)
         self.assertEqual(response.data["bid"]["amount_cents"], 10_000)
+        self.assertEqual(
+            response.data["bid"]["bidder_pseudonym"], pseudo(self.alice)
+        )
         self.assertFalse(response.data["extended"])
         self.assertEqual(response.data["next_minimum_cents"], 11_000)
 
@@ -576,6 +579,16 @@ class BidEndpointTests(APITestCase):
         self.assertEqual([row["seq"] for row in response.data["results"]], [2, 1])
         self.assertFalse(response.data["results"][0]["is_you"])   # lance do bob
         self.assertTrue(response.data["results"][1]["is_you"])    # lance da alice
+        # Cada linha carrega o pseudônimo público do licitante —
+        # identidade real jamais aparece.
+        self.assertEqual(
+            response.data["results"][0]["bidder_pseudonym"],
+            pseudo(self.bob),
+        )
+        self.assertEqual(
+            response.data["results"][1]["bidder_pseudonym"],
+            pseudo(self.alice),
+        )
 
     @patch(
         "rest_framework.throttling.ScopedRateThrottle.get_rate",
@@ -806,6 +819,10 @@ class AuctionRoomTests(APITransactionTestCase):
         self.assertEqual(bid_at_bob["type"], "bid.placed")
         self.assertTrue(bid_at_bob["is_you"])
         self.assertFalse(bid_at_alice["is_you"])
+        # O evento ao vivo carrega o pseudônimo (nunca identidade real).
+        self.assertEqual(
+            bid_at_alice["bid"]["bidder_pseudonym"], pseudo(self.bob)
+        )
 
         await sync_to_async(Auction.objects.filter(pk=self.auction.pk).update)(
             ends_at=timezone.now() - timedelta(minutes=1)

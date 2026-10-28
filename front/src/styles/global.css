@@ -603,6 +603,51 @@ h1 {
   margin: 0 0 0.75rem;
 }
 
+.room-art {
+  display: flex;
+  gap: 1.15rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.room-art-thumb {
+  width: 260px;
+  flex-shrink: 0;
+  aspect-ratio: 4 / 3;
+}
+
+.room-art-thumb.placeholder {
+  font-size: 2.2rem;
+}
+
+.room-art-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.room-art-artist {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-bottom: 0.1rem;
+}
+
+.room-art-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.room-art-desc {
+  margin: 0.5rem 0 0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.room-art-source {
+  font-size: 0.9rem;
+}
+
 .countdown-row {
   display: flex;
   align-items: baseline;
@@ -660,6 +705,7 @@ h1 {
 .bid-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.75rem;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--border);
@@ -667,6 +713,13 @@ h1 {
 
 .bid-row:last-child {
   border-bottom: none;
+}
+
+.bid-by {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .bid-row.you {
@@ -678,6 +731,15 @@ h1 {
 @media (max-width: 720px) {
   .room-grid {
     grid-template-columns: 1fr;
+  }
+
+  .room-art {
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  .room-art-thumb {
+    width: 100%;
   }
 }
 

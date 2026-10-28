@@ -828,6 +828,46 @@ class AuctionVitrineTests(APITestCase):
             "https://example.com/artwork.jpg",
         )
 
+    def test_detail_includes_artwork_information(self):
+        auction = self._auction()
+        auction.item.description = "Óleo sobre tela, escola flamenga."
+        auction.item.attributes = {
+            "artist": "Escola flamenga",
+            "date": "séc. XVII",
+            "medium": "Óleo sobre tela",
+            "dimensions": "62 × 48 cm",
+            "source_url": "https://www.artic.edu/artworks/123",
+        }
+        auction.item.save(update_fields=["description", "attributes"])
+        plain = self._auction(title="Obra sem ficha")
+
+        detail = self.client.get(f"{self.url}{auction.pk}/")
+        plain_detail = self.client.get(f"{self.url}{plain.pk}/")
+        listing = self.client.get(self.url)
+        row = next(
+            item
+            for item in listing.data["results"]
+            if item["id"] == auction.pk
+        )
+
+        self.assertEqual(
+            detail.data["item_description"],
+            "Óleo sobre tela, escola flamenga.",
+        )
+        self.assertEqual(
+            detail.data["item_attributes"]["artist"],
+            "Escola flamenga",
+        )
+        self.assertEqual(
+            detail.data["item_attributes"]["source_url"],
+            "https://www.artic.edu/artworks/123",
+        )
+        self.assertIsNone(plain_detail.data["item_description"])
+        self.assertIsNone(plain_detail.data["item_attributes"])
+        # A lista continua enxuta: a ficha só vem no detalhe.
+        self.assertNotIn("item_description", row)
+        self.assertNotIn("item_attributes", row)
+
     def test_detail_settles_an_expired_auction(self):
         auction = self._auction(status=Auction.Status.SCHEDULED)
         place_bid(
