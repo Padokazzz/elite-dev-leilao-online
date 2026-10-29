@@ -16,6 +16,7 @@ import useAuctionRoom from "../hooks/useAuctionRoom";
 import useCountdown from "../hooks/useCountdown";
 import { formatDateTime, formatRemaining, formatTime } from "../lib/datetime";
 import { bidRejectionMessage } from "../lib/bidErrors";
+import { supersedingBid } from "../lib/bids";
 import { formatCents, parseBrlToCents } from "../lib/money";
 
 type BidError = { message: string; needsFunds: boolean };
@@ -240,6 +241,11 @@ export default function RoomPage() {
 
   const extendedNote = Boolean(newestWs?.extended) && status === "live";
 
+  // Escopo §02 (sala): indicador claro de "você foi superado" — você já
+  // deu lance e outra pessoa está na frente. Observador não vê nada.
+  const supersededBy =
+    status === "live" && !youLead ? supersedingBid(mergedBids) : null;
+
   async function submitBid(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBidError(null);
@@ -444,6 +450,14 @@ export default function RoomPage() {
 
         {youLead && status === "live" && (
           <p className="feedback-success">⚡ Você é o maior lance.</p>
+        )}
+
+        {supersededBy && (
+          <p className="feedback-error">
+            👥 Você foi superado por{" "}
+            <strong>{supersededBy.bidder_pseudonym}</strong> — lance
+            mínimo: <strong>{formatCents(nextMinimum)}</strong>.
+          </p>
         )}
       </div>
 
