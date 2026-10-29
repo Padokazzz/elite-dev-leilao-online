@@ -176,6 +176,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "EXCEPTION_HANDLER": "config.exceptions.exception_handler",
     # Limite global de abuso (anon/autenticado) em TODO endpoint que não
     # define throttle próprio. Desligado na suíte — a contagem cumulativa
     # de centenas de testes esbarraria no teto; o comportamento é coberto

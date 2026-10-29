@@ -323,6 +323,8 @@ class LoginThrottleTests(APITestCase):
             response.status_code,
             status.HTTP_429_TOO_MANY_REQUESTS,
         )
+        self.assertIn("Muitas tentativas", response.data["detail"])
+        self.assertIn("available_in", response.data)
 
 
 class ThrottleIdentTests(TestCase):

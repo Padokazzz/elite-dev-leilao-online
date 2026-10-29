@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.test import SimpleTestCase
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
@@ -15,6 +16,7 @@ from catalog.services import (
     ArtworkAPIError,
     _normalize_artwork,
     _request_json,
+    fetch_artwork_image,
 )
 
 
@@ -390,3 +392,38 @@ class ArtworkPreviewImageViewTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 502)
+
+
+class FetchArtworkImageHostTests(SimpleTestCase):
+    """Travas de SSRF do proxy de imagem: só HTTPS da allowlist."""
+
+    def test_rejects_foreign_host_without_touching_the_network(self):
+        with patch("catalog.services.urlopen") as mock_urlopen:
+            with self.assertRaises(ArtworkAPIError):
+                fetch_artwork_image("https://evil.example.com/x.jpg")
+
+        mock_urlopen.assert_not_called()
+
+    def test_rejects_non_https_scheme(self):
+        with patch("catalog.services.urlopen") as mock_urlopen:
+            with self.assertRaises(ArtworkAPIError):
+                fetch_artwork_image("http://www.artic.edu/x.jpg")
+
+        mock_urlopen.assert_not_called()
+
+    def test_allows_the_official_artic_host(self):
+        with patch("catalog.services.urlopen") as mock_urlopen:
+            mock_response = MagicMock()
+            mock_response.__enter__.return_value.headers.get.return_value = (
+                "image/jpeg"
+            )
+            mock_response.__enter__.return_value.read.return_value = b"jpeg"
+            mock_urlopen.return_value = mock_response
+
+            content_type, body = fetch_artwork_image(
+                "https://www.artic.edu/iiif/2/abc/full/843,/0/default.jpg"
+            )
+
+        mock_urlopen.assert_called_once()
+        self.assertEqual(content_type, "image/jpeg")
+        self.assertEqual(body, b"jpeg")
