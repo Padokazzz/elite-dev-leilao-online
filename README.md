@@ -16,7 +16,7 @@ guia de setup, execução, decisões técnicas e entrega.
 | Front-end — painel do leiloeiro | ✅ Busca/importação de catálogo, criar, programar, cancelar, resultado por lote e total recebido |
 | Front-end — auditoria pública | ✅ Verificação de cadeia por lote, com deep link e cross-link do comprovante |
 | Infraestrutura | ✅ Docker Compose (Postgres, Redis, API, worker, front) · CI (GitHub Actions) · throttles globais · whitenoise |
-| Deploy | ⬜ Previsto: Render + Neon + Vercel (§4 do PLANO) |
+| Deploy | ✅ Em produção — Render (API + WS), Neon (Postgres), Vercel (front) — ver seção Deploy |
 
 ## Escopo implementado
 
@@ -164,18 +164,32 @@ teste falhar para provar que ele testa o que deve.
   estados derivados na renderização (nada de `setState` síncrono em
   efeito); dinheiro sempre em centavos até a formatação final.
 
-## Deploy (previsto — ainda não executado)
+## Deploy (produção)
 
-- **Render**: web service + worker (`daphne config.asgi:application`
-  na `${PORT}`), Redis gerenciado;
-- **Neon**: PostgreSQL serverless (mapear `DATABASE_URL` nas envs
-  `DB_*` que o settings lê);
-- **Vercel**: SPA com `VITE_API_URL` no build e rewrite da raiz para
-  `index.html` (rotas internas não podem dar 404);
-- Env vars de produção: `DJANGO_SECRET_KEY`, `AUDIT_PSEUDO_SECRET`,
-  `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`/`CSRF_TRUSTED_ORIGINS` com a
-  origem real;
-- Smoke final: seed, worker ativo, WS no ar, anti-snipe, estorno.
+- **Front (Vercel):** https://leilao-online-eta.vercel.app — build do `front/`
+  com `VITE_API_URL=https://elite-dev-leilao-online.onrender.com`; o
+  `front/vercel.json` traz o rewrite de SPA (toda rota sem arquivo →
+  `index.html`), para links diretos e reload não darem 404.
+- **API + WebSockets (Render):** https://elite-dev-leilao-online.onrender.com —
+  serviço único em Docker cujo boot é o `backend/render-start.sh`
+  (`sh render-start.sh`): `collectstatic` → `migrate` (idempotente, há um
+  único dyno) → **worker de liquidação embutido**
+  (`settle_auctions_loop --interval 5 &`) → daphne em `${PORT}`.
+  Health check em `/api/health`. *(Pre-Deploy Command e Background Worker
+  são pagos no Render free — por isso tudo vive no boot do dyno web.)*
+- **Banco (Neon):** PostgreSQL serverless; o settings lê `DB_HOST`, `DB_NAME`,
+  `DB_USER`, `DB_PASSWORD`, `DB_PORT` (mapeie um `DATABASE_URL` se preferir
+  gerenciar assim localmente).
+- **Redis (Upstash):** channel layer do Channels via `REDIS_URL` (TLS).
+- **Env vars de produção:** `DJANGO_SECRET_KEY`, `AUDIT_PSEUDO_SECRET`,
+  `DEBUG=False`, `ALLOWED_HOSTS` (inclui o host do front — exigido pelo
+  `AllowedHostsOriginValidator` do WebSocket, que lê o header `Origin`),
+  `CORS_ALLOWED_ORIGINS`/`CSRF_TRUSTED_ORIGINS` com a origem real, `DB_*`,
+  `REDIS_URL`.
+- **Smoke em produção:** health 200; login do seed; lance aceito com o push
+  chegando ao outro cliente em ~1 s (medido); auditoria anônima íntegra nos
+  lotes da vitrine; comprovante aberto por link anônimo; worker liquidando
+  os lotes encerrados no horário previsto.
 
 ## Uso de IA
 
