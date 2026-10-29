@@ -141,7 +141,10 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = "en-us"
+# pt-br: DRF e Django trazem traduções prontas — validações padrão
+# ("Este campo é obrigatório.", 404, 403, mensagens de password
+# validators) saem em português sem escrever uma linha de código.
+LANGUAGE_CODE = "pt-br"
 
 TIME_ZONE = "UTC"
 

@@ -10,7 +10,10 @@ export default function LoginPage() {
   const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => {
+    const state = location.state as { expired?: boolean } | null;
+    return state?.expired ? "Sua sessão expirou. Entre de novo." : null;
+  });
   const [busy, setBusy] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

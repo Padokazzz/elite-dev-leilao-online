@@ -327,6 +327,30 @@ class LoginThrottleTests(APITestCase):
         self.assertIn("available_in", response.data)
 
 
+class ErrorMessagesInPortugueseTests(APITestCase):
+    """LANGUAGE_CODE=pt-br: mensagens padrão do DRF saem em português."""
+
+    def setUp(self):
+        cache.clear()
+
+    def test_missing_field_error_comes_in_portuguese(self):
+        response = self.client.post(
+            "/api/auth/login/", {}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.data["email"],
+            ["Este campo é obrigatório."],
+        )
+
+    def test_not_found_detail_comes_in_portuguese(self):
+        response = self.client.get("/api/auctions/999999/")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("Não encontrado", str(response.data["detail"]))
+
+
 class ThrottleIdentTests(TestCase):
     class Probe(SimpleRateThrottle):
         rate = "1000/min"
