@@ -11,7 +11,7 @@ guia de setup, execução, decisões técnicas e entrega.
 
 | Área | Estado |
 | :--- | :--- |
-| Backend (Django + DRF + Channels) | ✅ Completo — 206 testes |
+| Backend (Django + DRF + Channels) | ✅ Completo — 212 testes |
 | Front-end — telas core | ✅ Vitrine, sala ao vivo, carteira, meus lances, comprovantes, auth, dark mode |
 | Front-end — painel do leiloeiro | ✅ Busca/importação de catálogo, criar, programar, cancelar, resultado por lote e total recebido |
 | Front-end — auditoria pública | ✅ Verificação de cadeia por lote, com deep link e cross-link do comprovante |
@@ -131,7 +131,7 @@ local. Reexecutar reposiciona os horários dos lotes de demonstração.
 ## Testes
 
 ```bash
-# backend — 206 testes
+# backend — 212 testes
 cd backend && ./.venv/bin/python manage.py test --noinput
 
 # front — vitest + typecheck + lint
@@ -218,7 +218,7 @@ nele é implementado e mapeado acima; o que não está, não entra.
 
 ### Orquestração e validação de testes
 
-- Suíte de 206 testes no backend rodando a cada etapa, antes de
+- Suíte de 212 testes no backend rodando a cada etapa, antes de
   qualquer commit; CI (GitHub Actions) reproduz a mesma suíte no
   push/PR — backend contra Postgres real e front com build + lint +
   testes;
@@ -261,3 +261,10 @@ Pouco óbvios de propósito, documentados aqui (o escopo pede que
 - **Catálogo do ArtIC nem sempre traz descrição/atributos** — a fonte
   nem sempre devolve texto; nesse caso a ficha da obra aparece com os
   campos disponíveis e a importação segue.
+- **A vitrine da demo nunca fica sem lote ao vivo** — a cada rodada o
+  worker (`settle_auctions_loop`) confere: sem nenhum lote `live` e com
+  o seed do demo presente (leiloeiro demo + itens `source="demo"`), ele
+  cria um novo lote de 24 h com obra rotativa. Em banco sem seed ele não
+  cria nada. Consequência documentada: cancelar o **último** lote ao vivo
+  faz o worker recriar outro em segundos — proposital, para quem avalia
+  sempre encontrar um lote aberto para testar.

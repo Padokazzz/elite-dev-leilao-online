@@ -27,7 +27,11 @@ from wallets.exceptions import HoldInconsistentError
 from wallets.models import Wallet, WalletTransaction
 
 from .models import Auction
-from .services import settle_auction, settle_expired_auctions
+from .services import (
+    ensure_demo_live_auction,
+    settle_auction,
+    settle_expired_auctions,
+)
 
 User = get_user_model()
 
@@ -1264,3 +1268,82 @@ class SeedDemoIdempotencyTests(APITestCase):
         self.assertGreater(first["items"], 0)
         self.assertGreaterEqual(first["users"], 3)
         self.assertGreater(first["bids"], 0)
+
+
+class EnsureDemoLiveAuctionTests(APITestCase):
+    """ensure_demo_live_auction: o worker nunca deixa a vitrine sem lote."""
+
+    def setUp(self):
+        self.seller = make_user(
+            username="keep_seller",
+            email="leiloeiro@demo.com",
+            role=User.Role.AUCTIONEER,
+        )
+        self.items = [
+            AuctionItem.objects.create(
+                source="demo",
+                external_id=f"demo-{index}",
+                title=f"Obra {index}",
+            )
+            for index in range(1, 5)
+        ]
+
+    def test_cria_lote_live_quando_nao_ha_nenhum_ao_vivo(self):
+        auction = ensure_demo_live_auction()
+
+        self.assertIsNotNone(auction)
+        self.assertEqual(auction.status, Auction.Status.LIVE)
+        self.assertEqual(auction.seller, self.seller)
+        self.assertEqual(auction.item_id, self.items[0].pk)
+        self.assertEqual(auction.starting_bid_cents, 10_000)
+        self.assertEqual(auction.minimum_increment_cents, 500)
+        self.assertLess(auction.starts_at, timezone.now())
+        self.assertTrue(
+            abs(auction.ends_at - (timezone.now() + timedelta(hours=24)))
+            < timedelta(seconds=5)
+        )
+
+    def test_nao_cria_quando_ja_ha_lote_ao_vivo(self):
+        existing = make_auction(self.seller)
+
+        self.assertIsNone(ensure_demo_live_auction())
+        self.assertEqual(
+            Auction.objects.filter(status=Auction.Status.LIVE).count(), 1
+        )
+        self.assertEqual(Auction.objects.get().pk, existing.pk)
+
+    def test_lote_expirado_pendente_bloqueia_ate_o_worker_liquidar(self):
+        expired = make_auction(self.seller, ends_in=timedelta(minutes=-5))
+
+        # status ainda é LIVE (liquidação pendente) → não cria em cima.
+        self.assertIsNone(ensure_demo_live_auction())
+
+        self.assertEqual(settle_expired_auctions(), 1)
+        replacement = ensure_demo_live_auction()
+        self.assertIsNotNone(replacement)
+        self.assertNotEqual(replacement.pk, expired.pk)
+
+    def test_ignora_ambiente_sem_leiloeiro_demo(self):
+        self.seller.delete()
+
+        self.assertIsNone(ensure_demo_live_auction())
+        self.assertEqual(Auction.objects.count(), 0)
+
+    def test_ignora_ambiente_sem_itens_demo(self):
+        AuctionItem.objects.all().delete()
+
+        self.assertIsNone(ensure_demo_live_auction())
+        self.assertEqual(Auction.objects.count(), 0)
+
+    def test_rotaciona_o_item_entre_criacoes(self):
+        first = ensure_demo_live_auction()
+
+        Auction.objects.filter(pk=first.pk).update(
+            ends_at=timezone.now() - timedelta(seconds=1)
+        )
+        self.assertEqual(settle_expired_auctions(), 1)
+
+        second = ensure_demo_live_auction()
+
+        self.assertIsNotNone(second)
+        self.assertNotEqual(first.item_id, second.item_id)
