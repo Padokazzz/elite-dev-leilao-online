@@ -11,7 +11,7 @@ guia de setup, execução, decisões técnicas e entrega.
 
 | Área | Estado |
 | :--- | :--- |
-| Backend (Django + DRF + Channels) | ✅ Completo — 212 testes |
+| Backend (Django + DRF + Channels) | ✅ Completo — 218 testes |
 | Front-end — telas core | ✅ Vitrine, sala ao vivo, carteira, meus lances, comprovantes, auth, dark mode |
 | Front-end — painel do leiloeiro | ✅ Busca/importação de catálogo, criar, programar, cancelar, resultado por lote e total recebido |
 | Front-end — auditoria pública | ✅ Verificação de cadeia por lote, com deep link e cross-link do comprovante |
@@ -131,7 +131,7 @@ local. Reexecutar reposiciona os horários dos lotes de demonstração.
 ## Testes
 
 ```bash
-# backend — 212 testes
+# backend — 218 testes
 cd backend && ./.venv/bin/python manage.py test --noinput
 
 # front — vitest + typecheck + lint
@@ -220,7 +220,7 @@ nele é implementado e mapeado acima; o que não está, não entra.
 
 ### Orquestração e validação de testes
 
-- Suíte de 212 testes no backend rodando a cada etapa, antes de
+- Suíte de 218 testes no backend rodando a cada etapa, antes de
   qualquer commit; CI (GitHub Actions) reproduz a mesma suíte no
   push/PR — backend contra Postgres real e front com build + lint +
   testes;
@@ -270,3 +270,7 @@ Pouco óbvios de propósito, documentados aqui (o escopo pede que
   cria nada. Consequência documentada: cancelar o **último** lote ao vivo
   faz o worker recriar outro em segundos — proposital, para quem avalia
   sempre encontrar um lote aberto para testar.
+- **A primeira visita pode levar ~30–50 s (Render free)** — o dyno dorme
+  entre acessos e acorda no primeiro pedido; enquanto isso o front mostra
+  "O servidor está acordando (a primeira visita pode levar até 1 minuto)".
+  Visitas seguintes são rápidas.
