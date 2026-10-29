@@ -35,8 +35,8 @@ superado, o comprometimento é liberado; cancelamento estorna tudo.
 origem validada no handshake (recusa antes de qualquer evento);
 snapshot inicial com `you_lead`; eventos `bid.placed` (com o pseudônimo
 do licitante, nunca a identidade), `auction.closed` e
-`auction.cancelled`; anti-snipe: lance no último minuto estende o fim
-em 2 minutos; reconexão infinita com backoff capado em 10 s (e
+`auction.cancelled`; anti-snipe: lance nos últimos 2 minutos reabre o
+fim para 2 minutos a partir do lance; reconexão infinita com backoff capado em 10 s (e
 retry imediato quando a aba volta ao foco ou a rede volta), com
 fallback de polling a cada 8 s enquanto o WS está fora.
 
@@ -149,7 +149,9 @@ teste falhar para provar que ele testa o que deve.
   derivado; movimentação nunca se edita, só se acrescenta.
 - **Lock transacional com ordem fixa** — lances simultâneos sem
   deadlock e sem saldo negativo.
-- **Anti-snipe de +2 minutos** — impedir o "roubo de segundo".
+- **Anti-snipe** — lance nos últimos 2 minutos reabre o relógio para
+  **2 minutos a partir do lance** (janela cheia de reação); impede o
+  "roubo de segundo".
 - **Liquidação idempotente + lazy settle + worker** — encerrar duas
   vezes não debita duas vezes, e a liquidação não depende de um cron.
 - **Cadeia de auditoria com HMAC, calculada no domínio** (nunca no
