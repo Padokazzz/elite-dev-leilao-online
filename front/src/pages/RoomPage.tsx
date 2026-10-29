@@ -100,6 +100,40 @@ export default function RoomPage() {
   }, [id, user, invalidId]);
 
   const snapshot = live.snapshot;
+  const offline = live.unavailable === "offline";
+
+  // Sem WS (deploy em andamento, rede instável…): rebusca lances e ficha a
+  // cada 8 s para a sala nunca ficar velha; o snapshot do reconnect cobre o resto.
+  useEffect(() => {
+    if (!user || invalidId || !offline) {
+      return;
+    }
+    let cancelled = false;
+    const refresh = () => {
+      api
+        .get<BidsResponse>(`/api/auctions/${id}/bids/`)
+        .then((data) => {
+          if (!cancelled) {
+            setRestBids(data.results);
+          }
+        })
+        .catch(() => undefined);
+      api
+        .get<AuctionDetail>(`/api/auctions/${id}/`, false)
+        .then((data) => {
+          if (!cancelled) {
+            setDetail(data);
+          }
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    const interval = window.setInterval(refresh, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [user, invalidId, offline, id]);
 
   const mergedBids = useMemo(() => {
     const bySeq = new Map<number, BidRow>();
@@ -357,10 +391,10 @@ export default function RoomPage() {
           {formatCents(detail.minimum_increment_cents)}
         </p>
 
-        {live.unavailable === "offline" && (
+        {offline && (
           <p className="feedback-error">
-            Sem conexão ao vivo — os dados podem estar defasados. Recarregue a
-            página.
+            ⏱ Sem conexão ao vivo — estou reconectando sozinho e rebuscando os
+            lances a cada poucos segundos enquanto isso.
           </p>
         )}
 
