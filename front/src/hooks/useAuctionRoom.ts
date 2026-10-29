@@ -13,7 +13,9 @@ const WS_BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:8000")
 
 const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_UNKNOWN_AUCTION = 4404;
-const MAX_ATTEMPTS = 5;
+// Backoff capado: um deploy no backend derruba os sockets e leva ~1 minuto
+// para voltar — desistir cedo faria a sala ficar muda até o reload manual.
+const MAX_BACKOFF_MS = 10000;
 
 type RoomUnavailable =
   | "unauthenticated"
@@ -53,18 +55,17 @@ export default function useAuctionRoom(
 
     let disposed = false;
     let attempts = 0;
+    let terminal = false;
     let timer: number | null = null;
     let socket: WebSocket | null = null;
 
     function scheduleReconnect() {
-      if (disposed || attempts >= MAX_ATTEMPTS) {
-        if (!disposed) {
-          setLive((prev) => ({ ...prev, unavailable: "offline" }));
-        }
+      if (disposed) {
         return;
       }
+      setLive((prev) => ({ ...prev, unavailable: "offline" }));
       attempts += 1;
-      const delay = Math.min(1000 * 2 ** attempts, 10000);
+      const delay = Math.min(1000 * 2 ** Math.min(attempts, 3), MAX_BACKOFF_MS);
       timer = window.setTimeout(connect, delay);
     }
 
@@ -77,6 +78,7 @@ export default function useAuctionRoom(
       );
 
       socket.onopen = () => {
+        attempts = 0;
         setLive((prev) => ({ ...prev, connected: true, unavailable: null }));
       };
 
@@ -104,10 +106,12 @@ export default function useAuctionRoom(
           return;
         }
         if (event.code === CLOSE_UNAUTHENTICATED) {
+          terminal = true;
           setLive((prev) => ({ ...prev, unavailable: "unauthenticated" }));
           return;
         }
         if (event.code === CLOSE_UNKNOWN_AUCTION) {
+          terminal = true;
           setLive((prev) => ({ ...prev, unavailable: "unknown" }));
           return;
         }
@@ -117,11 +121,39 @@ export default function useAuctionRoom(
 
     connect();
 
+    // Volta imediatamente quando a rede/aba volta (sem esperar o backoff).
+    function reconnectNow() {
+      if (disposed || terminal) {
+        return;
+      }
+      const state = socket?.readyState;
+      if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) {
+        return;
+      }
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+      attempts = 0;
+      connect();
+    }
+
+    function onVisible() {
+      if (document.visibilityState === "visible") {
+        reconnectNow();
+      }
+    }
+
+    window.addEventListener("online", reconnectNow);
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       disposed = true;
       if (timer !== null) {
         window.clearTimeout(timer);
       }
+      window.removeEventListener("online", reconnectNow);
+      document.removeEventListener("visibilitychange", onVisible);
       socket?.close();
     };
   }, [auctionId, token]);

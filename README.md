@@ -36,7 +36,9 @@ origem validada no handshake (recusa antes de qualquer evento);
 snapshot inicial com `you_lead`; eventos `bid.placed` (com o pseudônimo
 do licitante, nunca a identidade), `auction.closed` e
 `auction.cancelled`; anti-snipe: lance no último minuto estende o fim
-em 2 minutos; reconexão com backoff no front.
+em 2 minutos; reconexão infinita com backoff capado em 10 s (e
+retry imediato quando a aba volta ao foco ou a rede volta), com
+fallback de polling a cada 8 s enquanto o WS está fora.
 
 **Encerramento e liquidação** — liquidação idempotente (rodar duas
 vezes não debita duas vezes): vencedor debitado, comprovante criado,
