@@ -141,7 +141,10 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = "en-us"
+# pt-br: DRF e Django trazem traduções prontas — validações padrão
+# ("Este campo é obrigatório.", 404, 403, mensagens de password
+# validators) saem em português sem escrever uma linha de código.
+LANGUAGE_CODE = "pt-br"
 
 TIME_ZONE = "UTC"
 
@@ -176,6 +179,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "EXCEPTION_HANDLER": "config.exceptions.exception_handler",
     # Limite global de abuso (anon/autenticado) em TODO endpoint que não
     # define throttle próprio. Desligado na suíte — a contagem cumulativa
     # de centenas de testes esbarraria no teto; o comportamento é coberto

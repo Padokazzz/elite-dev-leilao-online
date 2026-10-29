@@ -1,7 +1,7 @@
 import html
 import json
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from django.utils.html import strip_tags
@@ -11,6 +11,9 @@ API_BASE_URL = "https://api.artic.edu/api/v1"
 SOURCE_NAME = "artic"
 REQUEST_TIMEOUT = 5
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024  # 2 MiB
+
+# O proxy de imagem só baixa de hosts conhecidos (trava de SSRF).
+ALLOWED_IMAGE_HOSTS = frozenset({"www.artic.edu", "artic.edu"})
 
 ARTWORK_FIELDS = (
     "id,title,artist_display,date_display,medium_display,"
@@ -123,6 +126,17 @@ def _normalize_artwork(artwork):
 
 
 def fetch_artwork_image(url):
+    # Defesa em profundidade contra SSRF: a URL vem do banco (importação
+    # do ArtIC ou seed), mas mesmo assim só baixa HTTPS de hosts da
+    # allowlist — uma URL externa chegando por outro caminho não passa
+    # daqui.
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname not in ALLOWED_IMAGE_HOSTS
+    ):
+        raise ArtworkAPIError("URL de imagem fora da lista permitida.")
+
     request = Request(
         url,
         headers={

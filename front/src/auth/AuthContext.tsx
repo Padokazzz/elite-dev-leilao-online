@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUnauthorizedHandler(() => {
       localStorage.removeItem(USER_KEY);
       setUser(null);
-      navigate("/entrar");
+      navigate("/entrar", { state: { expired: true } });
     });
 
     return () => setUnauthorizedHandler(null);
