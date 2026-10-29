@@ -1,10 +1,13 @@
 import logging
+from datetime import timedelta
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 
 from audit.services import pseudo
 from bidding.events import publish_auction_cancelled, publish_auction_closed
+from catalog.models import AuctionItem
 from receipts.models import Receipt
 from wallets.exceptions import HoldInconsistentError
 from wallets.models import WalletTransaction
@@ -13,6 +16,11 @@ from wallets.services import lock_wallets, release_hold
 from .models import Auction
 
 logger = logging.getLogger(__name__)
+
+# Regra de demonstração usada pelo worker (ensure_demo_live_auction):
+# só age em ambiente semeado — nunca cria dado sozinho num banco "real".
+DEMO_SELLER_EMAIL = "leiloeiro@demo.com"
+DEMO_LIVE_WINDOW = timedelta(hours=24)
 
 
 def settle_auction(auction_id: int) -> bool:
@@ -209,3 +217,47 @@ def cancel_auction(*, auction_id: int, seller) -> Auction:
         )
 
     return auction
+
+
+def ensure_demo_live_auction() -> Auction | None:
+    """Mantém sempre um lote de demonstração ao vivo (regra do worker).
+
+    A cada rodada do ``settle_auctions_loop``: se **nenhum** lote está
+    ``live`` e o ambiente tem o seed do demo (leiloeiro
+    ``leiloeiro@demo.com`` + itens ``source="demo"``), cria um novo lote
+    ``live`` de 24 h com obra rotativa do catálogo demo.
+
+    - Não toca em lotes existentes — enquanto houver um lote ao vivo
+      (criado pelo avaliador ou por aqui), devolve ``None``;
+    - Em banco sem seed não cria nada (guard duplo: leiloeiro e itens);
+    - Criado sem lances, o lote termina "encerrado sem lances" e o
+      próximo ciclo recria outro — a vitrine nunca fica vazia na demo.
+    """
+    if Auction.objects.filter(status=Auction.Status.LIVE).exists():
+        return None
+
+    User = get_user_model()
+    seller = User.objects.filter(
+        email=DEMO_SELLER_EMAIL, role=User.Role.AUCTIONEER
+    ).first()
+    if seller is None:
+        return None
+
+    items = list(
+        AuctionItem.objects.filter(source="demo").order_by("external_id")
+    )
+    if not items:
+        return None
+
+    # Rotação: quantos lotes demo já existem decide qual obra entra agora.
+    created = Auction.objects.filter(item__source="demo").count()
+    now = timezone.now()
+    return Auction.objects.create(
+        item=items[created % len(items)],
+        seller=seller,
+        starting_bid_cents=10_000,
+        minimum_increment_cents=500,
+        starts_at=now - timedelta(minutes=1),
+        ends_at=now + DEMO_LIVE_WINDOW,
+        status=Auction.Status.LIVE,
+    )
