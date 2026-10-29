@@ -370,6 +370,29 @@ class AntiSnipeTests(PlaceBidTestCase):
             timezone.now() + timedelta(minutes=2, seconds=-5),
         )
 
+    def test_extension_resets_the_clock_to_two_minutes_from_the_bid(self):
+        """Trava a semântica ATÉ: fim = lance + 2min, NÃO fim_antigo + 2min.
+
+        Um lance com 30s restantes deve reabrir o relógio para ~2:00 a
+        partir do lance. A leitura EM (ends_at += 2min) daria ~2:30 e
+        reprovaria na asserção superior.
+        """
+        auction = make_auction(self.seller, ends_in=timedelta(seconds=30))
+        before = timezone.now()
+
+        outcome = place_bid(
+            auction_id=auction.pk,
+            bidder=self.alice,
+            amount_cents=10_000,
+        )
+
+        self.assertTrue(outcome.extended)
+        self.assertGreaterEqual(outcome.ends_at, before + timedelta(minutes=2))
+        self.assertLess(
+            outcome.ends_at,
+            before + timedelta(minutes=2, seconds=25),
+        )
+
     def test_bid_exactly_two_minutes_before_deadline_still_extends(self):
         auction = make_auction(self.seller, ends_in=timedelta(minutes=2))
 

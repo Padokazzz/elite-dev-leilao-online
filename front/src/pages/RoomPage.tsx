@@ -289,7 +289,7 @@ export default function RoomPage() {
       setAmount("");
       setBidSuccess(
         `Lance de ${formatCents(response.bid.amount_cents)} aceito${
-          response.extended ? " — relógio estendido em 2 min" : ""
+          response.extended ? " — anti-snipe: relógio reaberto para 2 min" : ""
         }.`,
       );
     } catch (exc) {
@@ -431,14 +431,14 @@ export default function RoomPage() {
           <p className="muted">
             Próximo lance mínimo:{" "}
             <strong>{formatCents(nextMinimum)}</strong>. Nos últimos 2 minutos,
-            um novo lance estende o relógio em 2 min.
+            um novo lance reabre o relógio para 2 minutos a partir dele.
           </p>
         )}
 
         {extendedNote && (
           <p className="feedback-success">
-            ⏱ Relógio estendido: um lance nos últimos 2 minutos reiniciou a
-            contagem.
+            ⏱ Anti-snipe: um lance nos últimos 2 minutos reabriu o relógio —
+            há 2 minutos para contra-ofertar.
           </p>
         )}
 
