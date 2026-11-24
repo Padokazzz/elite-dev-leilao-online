@@ -1,3 +1,8 @@
+> **Projeto em destaque do portfólio** · [Abrir demonstração](https://leilao-online-eta.vercel.app) · [Código-fonte](https://github.com/Padokazzz/elite-dev-leilao-online)
+>
+> Plataforma full stack de leilões com lances em tempo real, carteira baseada em ledger, liquidação idempotente e trilha de auditoria verificável. É o principal estudo de caso deste portfólio por reunir regras de negócio, concorrência, segurança, comunicação em tempo real e testes.
+>
+> **Stack:** Django · DRF · Django Channels · React · TypeScript · PostgreSQL · Redis · Docker
 # Casa de Leilões Online
 
 Elite Dev · Plataforma de leilões em tempo real com carteiras, lotes,
